@@ -1,0 +1,3 @@
+﻿# Local snapshots are ignored by default.
+*
+!.gitignore

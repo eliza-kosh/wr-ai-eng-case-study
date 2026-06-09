@@ -1,0 +1,32 @@
+﻿# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local data and artifacts
+data/local/**
+data/snapshots/**
+!data/local/.gitignore
+!data/snapshots/.gitignore
+*.log
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

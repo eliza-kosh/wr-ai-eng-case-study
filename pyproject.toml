@@ -1,0 +1,22 @@
+﻿[project]
+name = "whalerock-brain"
+version = "0.1.0"
+description = "Azure-first monorepo for the Whale Rock AI Engineer case study."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dashboard = ["streamlit>=1.35"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/whalerock_brain"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "apps", "tests"]
