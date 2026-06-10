@@ -78,30 +78,26 @@ class ProcessingRunner:
             raise
 
     def enrich_pending(self) -> int:
-        """Enrich source items that have not been classified yet."""
+        """Enrich one batch of source items that have not been classified yet."""
         total = 0
-        while True:
-            items = self.store.fetch_unenriched_items(self.config.enrichment_batch_size)
-            if not items:
-                return total
-            for item in items:
-                try:
-                    result = self.llm.enrich_item(item)
-                    self.store.upsert_enrichment(item, result, self.config.openai_enrichment_model)
-                    total += 1
-                except Exception:
-                    logging.exception("Enrichment failed source_item_id=%s", item.source_item_id)
+        items = self.store.fetch_unenriched_items(self.config.enrichment_batch_size)
+        for item in items:
+            try:
+                result = self.llm.enrich_item(item)
+                self.store.upsert_enrichment(item, result, self.config.openai_enrichment_model)
+                total += 1
+            except Exception:
+                logging.exception("Enrichment failed source_item_id=%s", item.source_item_id)
+        return total
 
     def embed_pending(self) -> int:
-        """Embed relevant enriched summaries that do not have vectors yet."""
-        total = 0
-        while True:
-            items = self.store.fetch_unembedded_items(self.config.embedding_batch_size)
-            if not items:
-                return total
-            embeddings = self.llm.embed_texts([item.summary for item in items])
-            self.store.upsert_embeddings(items, embeddings, self.config.openai_embedding_model)
-            total += len(items)
+        """Embed one batch of relevant enriched summaries that do not have vectors yet."""
+        items = self.store.fetch_unembedded_items(self.config.embedding_batch_size)
+        if not items:
+            return 0
+        embeddings = self.llm.embed_texts([item.summary for item in items])
+        self.store.upsert_embeddings(items, embeddings, self.config.openai_embedding_model)
+        return len(items)
 
     def verify_connections(self, run_id: str) -> dict[str, int]:
         """Generate cross-source candidates and persist model verification results."""
