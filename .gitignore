@@ -13,11 +13,13 @@ __pycache__/
 .venv/
 venv/
 
-# Local data and artifacts
-data/local/**
-data/snapshots/**
-!data/local/.gitignore
-!data/snapshots/.gitignore
+# Azure Functions
+dataload/local.settings.json
+dataload/.python_packages/
+
+# Local notebook and exploration artifacts
+notebooks/**/.ipynb_checkpoints/
+notebooks/**/outputs/
 *.log
 
 # Build outputs

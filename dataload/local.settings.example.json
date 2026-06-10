@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AZURE_STORAGE_CONNECTION_STRING": "",
+    "AZURE_STORAGE_CONTAINER": "source-data",
+    "AZURE_POSTGRES_DSN": "",
+    "GITHUB_TOKEN": "",
+    "DATALOAD_INITIAL_LOOKBACK_DAYS": "180",
+    "REDDIT_DATALOAD_SCHEDULE": "0 0 * * * *",
+    "HACKER_NEWS_DATALOAD_SCHEDULE": "0 10 * * * *",
+    "GITHUB_DATALOAD_SCHEDULE": "0 20 * * * *"
+  }
+}
