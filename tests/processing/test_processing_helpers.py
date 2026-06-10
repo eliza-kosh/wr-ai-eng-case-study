@@ -73,8 +73,8 @@ def test_citation_validation() -> None:
 def test_config_defaults_match_plan() -> None:
     config = ProcessingConfig()
     assert config.sources == ("reddit", "hacker_news", "github")
-    assert config.relevance_threshold == 5
-    assert config.similarity_threshold == 0.75
+    assert config.relevance_threshold == 2
+    assert config.similarity_threshold == 0.55
     assert config.connection_confidence_threshold == 0.6
     assert config.max_agent_searches == 5
     assert config.anthropic_connection_model == "claude-opus-4-8"
