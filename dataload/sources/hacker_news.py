@@ -168,11 +168,15 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
 
     def hn_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Call Algolia Hacker News API."""
-        response = requests.get(
-            f"{ALGOLIA_HN_BASE_URL}/{path.lstrip('/')}",
-            params=params or {},
-            timeout=30,
-        )
+        try:
+            response = requests.get(
+                f"{ALGOLIA_HN_BASE_URL}/{path.lstrip('/')}",
+                params=params or {},
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            logging.warning("HN request failed path=%s params=%s error=%s", path, params, exc)
+            return {}
         if not response.ok:
             logging.warning(
                 "HN HTTP %s path=%s params=%s body=%s",

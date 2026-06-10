@@ -228,17 +228,27 @@ class RedditDataloadRunner(SourceDataloadRunner):
 
     def arctic_get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         """Call Arctic Shift API."""
-        response = requests.get(
-            f"{ARCTIC_SHIFT_BASE_URL}/{path.lstrip('/')}",
-            params={key: value for key, value in params.items() if value is not None},
-            timeout=30,
-        )
+        cleaned_params = {key: value for key, value in params.items() if value is not None}
+        try:
+            response = requests.get(
+                f"{ARCTIC_SHIFT_BASE_URL}/{path.lstrip('/')}",
+                params=cleaned_params,
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            logging.warning(
+                "Arctic Shift request failed path=%s params=%s error=%s",
+                path,
+                cleaned_params,
+                exc,
+            )
+            return {"data": []}
         if not response.ok:
             logging.warning(
                 "Arctic Shift HTTP %s path=%s params=%s body=%s",
                 response.status_code,
                 path,
-                params,
+                cleaned_params,
                 response.text[:200],
             )
             return {"data": []}

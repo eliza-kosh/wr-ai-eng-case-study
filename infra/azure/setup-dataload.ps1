@@ -97,7 +97,9 @@ az postgres flexible-server firewall-rule create `
     --end-ip-address 0.0.0.0
 
 $postgresHost = "$postgresServer.postgres.database.azure.com"
-$postgresDsn = "postgresql://$PostgresAdminUser`:$postgresPassword@$postgresHost`:5432/$postgresDb?sslmode=require"
+$encodedPostgresUser = [System.Uri]::EscapeDataString($PostgresAdminUser)
+$encodedPostgresPassword = [System.Uri]::EscapeDataString($postgresPassword)
+$postgresDsn = "postgresql://$encodedPostgresUser`:$encodedPostgresPassword@$postgresHost`:5432/$postgresDb?sslmode=require"
 
 az keyvault create `
     --name $keyVault `
@@ -165,21 +167,13 @@ az role assignment create `
     --role "Key Vault Secrets User" `
     --scope $keyVaultScope 1>$null
 
-$storageSecretUri = az keyvault secret show `
+$storageSecretUri = "https://$keyVault.vault.azure.net/secrets/azure-storage-connection-string"
+$postgresSecretUri = "https://$keyVault.vault.azure.net/secrets/azure-postgres-dsn"
+$githubSecretExists = az keyvault secret list `
     --vault-name $keyVault `
-    --name "azure-storage-connection-string" `
-    --query id `
+    --query "[?name=='github-token'] | length(@)" `
     --output tsv
-$postgresSecretUri = az keyvault secret show `
-    --vault-name $keyVault `
-    --name "azure-postgres-dsn" `
-    --query id `
-    --output tsv
-$githubSecretUri = az keyvault secret show `
-    --vault-name $keyVault `
-    --name "github-token" `
-    --query id `
-    --output tsv 2>$null
+$githubSecretUri = "https://$keyVault.vault.azure.net/secrets/github-token"
 
 $appSettings = @(
     "AzureWebJobsStorage=@Microsoft.KeyVault(SecretUri=$storageSecretUri)",
@@ -194,7 +188,7 @@ $appSettings = @(
     "GITHUB_DATALOAD_SCHEDULE=0 0 */12 * * *"
 )
 
-if ($githubSecretUri) {
+if ($githubSecretExists -gt 0) {
     $appSettings += "GITHUB_TOKEN=@Microsoft.KeyVault(SecretUri=$githubSecretUri)"
 }
 

@@ -161,12 +161,16 @@ class GitHubDataloadRunner(SourceDataloadRunner):
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        response = requests.get(
-            f"https://api.github.com/{path.lstrip('/')}",
-            headers=headers,
-            params=params or {},
-            timeout=30,
-        )
+        try:
+            response = requests.get(
+                f"https://api.github.com/{path.lstrip('/')}",
+                headers=headers,
+                params=params or {},
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            logging.warning("GitHub request failed path=%s params=%s error=%s", path, params, exc)
+            return [] if expect_list else {}
         if not response.ok:
             logging.warning(
                 "GitHub HTTP %s path=%s params=%s body=%s",
