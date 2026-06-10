@@ -96,7 +96,7 @@ class PostgresStore:
     def _connect(self) -> Any:
         import psycopg
 
-        return psycopg.connect(self.dsn)
+        return psycopg.connect(self.dsn, connect_timeout=15)
 
     def ensure_schema(self) -> None:
         """Create minimal tables if they do not exist."""
