@@ -20,7 +20,6 @@ COMMENT_LIMIT_PER_STORY = int(os.getenv("HN_COMMENT_LIMIT_PER_STORY", "10"))
 HN_CONFIG: dict[str, dict[str, list[str]]] = {
     "AMD": {
         "queries": ["ROCm", "AMD ROCm", "MI300", "AMD Instinct", "EPYC", "AMD GPU"],
-        "competitor_terms": ["NVIDIA", "CUDA", "Intel oneAPI"],
     },
     "SNDK": {
         "queries": [
@@ -30,19 +29,15 @@ HN_CONFIG: dict[str, dict[str, list[str]]] = {
             "microSD reliability",
             "SanDisk SD card",
         ],
-        "competitor_terms": ["Samsung SSD", "Crucial", "Seagate"],
     },
     "FROG": {
         "queries": ["JFrog", "Artifactory", "JFrog Xray", "artifact registry"],
-        "competitor_terms": ["GitHub Packages", "Nexus Repository", "Harbor"],
     },
     "APP": {
         "queries": ["AppLovin", "AppLovin MAX", "mobile ad mediation"],
-        "competitor_terms": ["Unity Ads", "ironSource", "AdMob"],
     },
     "KVYO": {
         "queries": ["Klaviyo", "Klaviyo Shopify", "Klaviyo email"],
-        "competitor_terms": ["Mailchimp", "Omnisend", "Brevo", "ActiveCampaign"],
     },
 }
 
@@ -120,7 +115,6 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
             story_url = story.get("url") or story.get("story_url")
             hn_url = f"https://news.ycombinator.com/item?id={story_id}"
             published_at = parse_datetime(story.get("created_at"))
-            text_for_mentions = " ".join([title or "", story_url or ""])
 
             normalized.append(
                 {
@@ -141,9 +135,6 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
                         "points": story.get("points"),
                         "num_comments": story.get("num_comments"),
                         "tags": story.get("_tags"),
-                        "competitor_mentions": self.find_competitor_mentions(
-                            run.partition.ticker, text_for_mentions
-                        ),
                     },
                 }
             )
@@ -212,12 +203,3 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
             comments.append(comment)
             stack.extend(comment.get("children") or [])
         return comments
-
-    def find_competitor_mentions(self, ticker: str, text: str) -> list[str]:
-        """Find competitor terms in already-relevant story text."""
-        lowered = text.lower()
-        return [
-            term
-            for term in HN_CONFIG.get(ticker, {}).get("competitor_terms", [])
-            if term.lower() in lowered
-        ]
