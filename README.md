@@ -50,13 +50,23 @@ Local-only values can be copied from `.env.example` into `.env`. Do not commit r
 
 ## GitHub Deployment
 
-`.github/workflows/deploy-dataload.yml` deploys the `dataload` Azure Function App from `main` using GitHub Actions OIDC. Add these GitHub repository secrets after creating an Azure app registration or managed identity with deploy permissions:
+`.github/workflows/deploy-dataload.yml` deploys the `dataload` Azure Function App from `main` using a Function App publish profile. Add this GitHub repository secret:
 
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_FUNCTIONAPP_PUBLISH_PROFILE`
 
-The helper script creates a service principal scoped to the Function App and adds a federated credential for this repository:
+You can download the publish profile from the Azure Portal Function App overview page, or with Azure CLI:
+
+```powershell
+$env:Path = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;$env:Path"
+az functionapp deployment list-publishing-profiles `
+  --resource-group "eliza-ai-workbench-rg" `
+  --name "eliza-ai-workbench-dataload-func-58415" `
+  --xml
+```
+
+Copy the full XML output into the GitHub secret value.
+
+The OIDC helper script is kept for future RBAC-based deployment work:
 
 ```powershell
 $env:Path = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;$env:Path"
