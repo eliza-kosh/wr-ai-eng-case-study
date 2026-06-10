@@ -51,7 +51,7 @@ def _recent_runs(cur: psycopg.Cursor[Any]) -> list[dict[str, Any]]:
     try:
         cur.execute(
             """
-            select run_id, run_type, status, started_at, completed_at, error_message
+            select run_id, status, started_at, completed_at, error_message, metadata
             from processing_runs
             order by started_at desc
             limit 10
@@ -64,11 +64,11 @@ def _recent_runs(cur: psycopg.Cursor[Any]) -> list[dict[str, Any]]:
     return [
         {
             "run_id": row[0],
-            "run_type": row[1],
-            "status": row[2],
-            "started_at": row[3].isoformat() if row[3] else None,
-            "completed_at": row[4].isoformat() if row[4] else None,
-            "error_message": row[5],
+            "status": row[1],
+            "started_at": row[2].isoformat() if row[2] else None,
+            "completed_at": row[3].isoformat() if row[3] else None,
+            "error_message": row[4],
+            "metadata": row[5] or {},
         }
         for row in cur.fetchall()
     ]
