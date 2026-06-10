@@ -1,0 +1,13 @@
+{
+  "scriptFile": "__init__.py",
+  "bindings": [
+    {
+      "name": "timer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "%PROCESSING_SYNTHESIS_SCHEDULE%",
+      "runOnStartup": false,
+      "useMonitor": true
+    }
+  ]
+}

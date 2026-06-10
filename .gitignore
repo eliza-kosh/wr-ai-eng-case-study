@@ -16,6 +16,8 @@ venv/
 # Azure Functions
 dataload/local.settings.json
 dataload/.python_packages/
+processing/local.settings.json
+processing/.python_packages/
 
 # Local notebook and exploration artifacts
 notebooks/**/.ipynb_checkpoints/
