@@ -12,9 +12,9 @@ class ProcessingConfig:
 
     tickers: tuple[str, ...] = ("AMD", "SNDK", "FROG", "APP", "KVYO")
     sources: tuple[str, ...] = ("reddit", "hacker_news", "github")
-    relevance_threshold: int = 2
-    similarity_threshold: float = 0.55
-    connection_confidence_threshold: float = 0.4
+    relevance_threshold: int = 0
+    similarity_threshold: float = 0.35
+    connection_confidence_threshold: float = 0.25
     temporal_window_days: int = 180
     max_connection_candidates_per_ticker: int = 50
     max_agent_searches: int = 5
@@ -35,10 +35,10 @@ class ProcessingConfig:
         return cls(
             tickers=tickers,
             sources=sources,
-            relevance_threshold=int(os.getenv("PROCESSING_RELEVANCE_THRESHOLD", "2")),
-            similarity_threshold=float(os.getenv("PROCESSING_SIMILARITY_THRESHOLD", "0.55")),
+            relevance_threshold=int(os.getenv("PROCESSING_RELEVANCE_THRESHOLD", "0")),
+            similarity_threshold=float(os.getenv("PROCESSING_SIMILARITY_THRESHOLD", "0.35")),
             connection_confidence_threshold=float(
-                os.getenv("PROCESSING_CONNECTION_CONFIDENCE_THRESHOLD", "0.4")
+                os.getenv("PROCESSING_CONNECTION_CONFIDENCE_THRESHOLD", "0.25")
             ),
             temporal_window_days=int(os.getenv("PROCESSING_TEMPORAL_WINDOW_DAYS", "180")),
             max_connection_candidates_per_ticker=int(

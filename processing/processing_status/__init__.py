@@ -73,7 +73,7 @@ def _ticker_coverage(cur: psycopg.Cursor[Any]) -> list[dict[str, Any]]:
             ),
             enrichment_counts as (
                 select ticker, source, count(*)::int as enriched_items,
-                       count(*) filter (where relevance >= 2)::int as relevant_items,
+                       count(*) filter (where relevance >= 0)::int as relevant_items,
                        max(relevance)::int as max_relevance
                 from item_enrichments
                 group by ticker, source
