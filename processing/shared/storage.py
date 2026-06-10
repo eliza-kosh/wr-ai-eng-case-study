@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import uuid
 from typing import Any
@@ -198,19 +199,32 @@ class ProcessingStore:
             conn.commit()
 
     def fetch_unenriched_items(self, limit: int) -> list[SourceItem]:
+        group_limit = self._balanced_group_limit(limit)
         sql = """
-        select si.source_item_id, si.ticker, si.source, si.source_url, si.title, si.body,
-               si.author, si.published_at, si.metadata
-        from source_items si
-        left join item_enrichments ie on ie.source_item_id = si.source_item_id
-        where ie.source_item_id is null
-          and si.source = any(%s)
-          and si.ticker = any(%s)
-        order by si.fetched_at asc
+        with candidates as (
+            select si.source_item_id, si.ticker, si.source, si.source_url, si.title, si.body,
+                   si.author, si.published_at, si.metadata, si.fetched_at,
+                   row_number() over (
+                       partition by si.ticker, si.source
+                       order by si.fetched_at asc
+                   ) as group_rank
+            from source_items si
+            left join item_enrichments ie on ie.source_item_id = si.source_item_id
+            where ie.source_item_id is null
+              and si.source = any(%s)
+              and si.ticker = any(%s)
+        )
+        select source_item_id, ticker, source, source_url, title, body, author, published_at, metadata
+        from candidates
+        where group_rank <= %s
+        order by fetched_at asc
         limit %s
         """
         with self._connect() as conn:
-            rows = conn.execute(sql, (list(self.config.sources), list(self.config.tickers), limit)).fetchall()
+            rows = conn.execute(
+                sql,
+                (list(self.config.sources), list(self.config.tickers), group_limit, limit),
+            ).fetchall()
         return [_source_item(row) for row in rows]
 
     def upsert_enrichment(self, item: SourceItem, result: EnrichmentResult, model: str) -> None:
@@ -251,17 +265,28 @@ class ProcessingStore:
             conn.commit()
 
     def fetch_unembedded_items(self, limit: int) -> list[EmbeddedItem]:
+        group_limit = self._balanced_group_limit(limit)
         sql = """
-        select ie.source_item_id, ie.ticker, ie.source, si.published_at, ie.summary
-        from item_enrichments ie
-        join source_items si on si.source_item_id = ie.source_item_id
-        left join item_embeddings emb on emb.source_item_id = ie.source_item_id
-        where emb.source_item_id is null
-          and ie.relevance >= %s
-          and ie.summary <> ''
-          and ie.ticker = any(%s)
-          and ie.source = any(%s)
-        order by ie.enriched_at asc
+        with candidates as (
+            select ie.source_item_id, ie.ticker, ie.source, si.published_at, ie.summary,
+                   ie.enriched_at,
+                   row_number() over (
+                       partition by ie.ticker, ie.source
+                       order by ie.enriched_at asc
+                   ) as group_rank
+            from item_enrichments ie
+            join source_items si on si.source_item_id = ie.source_item_id
+            left join item_embeddings emb on emb.source_item_id = ie.source_item_id
+            where emb.source_item_id is null
+              and ie.relevance >= %s
+              and ie.summary <> ''
+              and ie.ticker = any(%s)
+              and ie.source = any(%s)
+        )
+        select source_item_id, ticker, source, published_at, summary
+        from candidates
+        where group_rank <= %s
+        order by enriched_at asc
         limit %s
         """
         with self._connect() as conn:
@@ -271,6 +296,7 @@ class ProcessingStore:
                     self.config.relevance_threshold,
                     list(self.config.tickers),
                     list(self.config.sources),
+                    group_limit,
                     limit,
                 ),
             ).fetchall()
@@ -284,6 +310,10 @@ class ProcessingStore:
             )
             for row in rows
         ]
+
+    def _balanced_group_limit(self, limit: int) -> int:
+        group_count = max(1, len(self.config.tickers) * len(self.config.sources))
+        return max(1, math.ceil(limit / group_count))
 
     def upsert_embeddings(self, items: list[EmbeddedItem], embeddings: list[list[float]], model: str) -> None:
         values = []
