@@ -65,10 +65,10 @@ class ProcessingRunner:
             "sentiment_rows": 0,
         }
         try:
-            connection_counts = self.verify_connections(run_id)
-            counts.update(connection_counts)
             counts["summaries"] = self.generate_brain_summaries(run_id)
             counts["sentiment_rows"] = self.store.refresh_sentiment_weekly()
+            connection_counts = self.verify_connections(run_id)
+            counts.update(connection_counts)
             self.store.complete_run(run_id, {"job": "synthesis_processing", "counts": counts})
             logging.info("Synthesis processing complete run_id=%s counts=%s", run_id, counts)
             return counts
