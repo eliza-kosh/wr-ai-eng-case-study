@@ -70,7 +70,9 @@ jobs:
               --location "$AZURE_LOCATION"
           fi
 
-          az acr update --name "$ACR_NAME" --admin-enabled true >/dev/null
+          if ! az acr update --name "$ACR_NAME" --admin-enabled true >/dev/null; then
+            echo "::warning::Could not update ACR admin-enabled setting with this identity. Continuing with existing registry configuration."
+          fi
 
           if ! az containerapp env show --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_APP_ENV" >/dev/null 2>&1; then
             az containerapp env create \
