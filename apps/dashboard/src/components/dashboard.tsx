@@ -94,7 +94,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   </button>
                 </div>
               </div>
-              {view === "connections" ? <Connections items={data.connections} /> : <Sentiment rows={chartRows} sources={sentimentSources} />}
+              {view === "connections" ? <Connections items={data.connections} sources={visibleSources} /> : <Sentiment rows={chartRows} sources={sentimentSources} />}
             </section>
           </section>
         </div>
@@ -197,14 +197,17 @@ function SourceFeed({ items }: { items: SourceItem[] }) {
   );
 }
 
-function Connections({ items }: { items: ConnectionItem[] }) {
+function Connections({ items, sources }: { items: ConnectionItem[]; sources: SourceItem[] }) {
   const topItems = dedupeConnections(items).slice(0, 5);
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
   if (!topItems.length) return <div className="emptyState">No verified connections found for this ticker yet.</div>;
   return (
     <div className="connectionList">
       {topItems.map((item, index) => {
         const headline = connectionRead(item);
         const support = connectionSupport(item, headline);
+        const citationIds = connectionCitationIds(item, sources);
+        const citationNumbers = new Map(citationIds.map((id, citationIndex) => [id, citationIndex + 1]));
         return (
           <article className="connectionCard" key={item.id}>
             <div className="connectionRank">#{index + 1}</div>
@@ -217,6 +220,7 @@ function Connections({ items }: { items: ConnectionItem[] }) {
               {support ? <p>{support}</p> : null}
               <small>
                 Evidence: {label(item.sourceA)} and {label(item.sourceB)}
+                <CitationGroup ids={citationIds} citationNumbers={citationNumbers} sourceById={sourceById} />
               </small>
             </div>
           </article>
@@ -226,6 +230,15 @@ function Connections({ items }: { items: ConnectionItem[] }) {
   );
 }
 
+function connectionCitationIds(item: ConnectionItem, sources: SourceItem[]) {
+  return unique([resolveSourceRef(item.sourceA, sources), resolveSourceRef(item.sourceB, sources)]);
+}
+
+function resolveSourceRef(value: string, sources: SourceItem[]) {
+  if (sources.some((source) => source.id === value)) return value;
+  const normalized = value.toLowerCase();
+  return sources.find((source) => source.source.toLowerCase() === normalized || label(source.source).toLowerCase() === label(value).toLowerCase())?.id || value;
+}
 function connectionRead(item: ConnectionItem) {
   const sourceALabel = label(item.sourceA);
   const sourceBLabel = label(item.sourceB);
