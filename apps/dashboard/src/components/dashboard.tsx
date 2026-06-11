@@ -59,7 +59,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
 
         <div className="workspace">
           <section className="primaryStack">
-            <section className="card">
+            <section id="sources" className="card">
               <div className="sectionTitleRow">
                 <div className="sectionHeading">
                   <p>Sources</p>
@@ -152,14 +152,14 @@ function CitationGroup({ ids, citationNumbers, sourceById }: { ids: string[]; ci
         const number = citationNumbers.get(id);
         const source = sourceById.get(id);
         if (!number) return null;
-        return source?.sourceUrl ? (
-          <a key={id} href={source.sourceUrl} target="_blank" title={source.title || id}>
+        return source ? (
+          <a key={id} href={`#${sourceAnchorId(id)}`} title={source.title || id}>
             [{number}]
           </a>
         ) : (
-          <span key={id} title={source?.title || id}>
+          <a key={id} href="#sources" title={id}>
             [{number}]
-          </span>
+          </a>
         );
       })}
     </sup>
@@ -171,7 +171,7 @@ function SourceFeed({ items }: { items: SourceItem[] }) {
   return (
     <div className="sourceFeed">
       {items.map((item) => (
-        <article className={item.cited ? "sourceRow cited" : "sourceRow"} key={item.id}>
+        <article id={sourceAnchorId(item.id)} className={item.cited ? "sourceRow cited" : "sourceRow"} key={item.id}>
           <div className="sourceBadge" style={{ color: color(item.source) }}>
             <span>{label(item.source)}</span>
             <small>{formatDate(item.publishedAt)}</small>
@@ -328,6 +328,9 @@ function extractCitationIds(value: string) {
   return unique(Array.from(value.matchAll(/\b[a-z_]+:[0-9a-f]{8,}\b/g)).map((match) => match[0]));
 }
 
+function sourceAnchorId(id: string) {
+  return `source-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
 function dedupeSources(items: SourceItem[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -359,6 +362,4 @@ function normalizeForDedupe(value: string) {
 function sameText(a: string, b: string) {
   return normalizeForDedupe(a) === normalizeForDedupe(b);
 }
-
-
 
