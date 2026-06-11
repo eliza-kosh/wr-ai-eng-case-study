@@ -398,6 +398,11 @@ same week — that kind of corroboration is what starts moving procurement conve
 adoption trajectory, competitive position, churn, or pricing power.
   - Include the tension. An all-bull overview is a red flag. If the data has counter-signals, \
 put them in. If it doesn't, name what the data cannot confirm.
+  - Use inline citations inside the overview itself. Put the exact source item ID immediately \
+after the claim it supports, in parentheses. Example: "Two developers published MI300X serving \
+results showing a 5.6x throughput jump (hn_comment:db7cf87a81892bf830ee22f6)." Do this for \
+every concrete benchmark, user report, defect, pricing claim, migration claim, or customer \
+behavior claim. Do not put all citations at the end of a paragraph.
 
 CROSS-SOURCE CONNECTIONS: 1–2 entries explaining the causal chain linking signals to the \
 stock. The right level: "AMD's datacenter sales depend on a developer pipeline. Developers \

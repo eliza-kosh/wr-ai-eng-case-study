@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -28,6 +28,13 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   const visibleSources = useMemo(() => dedupeSources(data.sources), [data.sources]);
   const sourceNames = useMemo(() => Array.from(new Set(visibleSources.map((i) => i.source))).sort(), [visibleSources]);
   const filtered = sourceFilter === "all" ? visibleSources : visibleSources.filter((i) => i.source === sourceFilter);
+  const topConnections = useMemo(() => dedupeConnections(data.connections).slice(0, 5), [data.connections]);
+  const sourceById = useMemo(() => new Map(visibleSources.map((source) => [source.id, source])), [visibleSources]);
+  const citationNumbers = useMemo(() => {
+    const overviewIds = splitParagraphs(data.summary?.overview || "").flatMap(extractCitationIds);
+    const connectionIds = topConnections.flatMap((item) => connectionCitationIds(item, visibleSources));
+    return new Map(unique([...overviewIds, ...connectionIds]).map((id, index) => [id, index + 1]));
+  }, [data.summary?.overview, topConnections, visibleSources]);
   const chartRows = useMemo(() => toChartRows(data.sentiment), [data.sentiment]);
   const sentimentSources = useMemo(() => Array.from(new Set(data.sentiment.map((p) => p.source))).sort(), [data.sentiment]);
 
@@ -55,7 +62,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
       ) : null}
 
       <main className="mainStack">
-        <Overview data={data} sources={visibleSources} />
+        <Overview data={data} citationNumbers={citationNumbers} sourceById={sourceById} />
 
         <div className="workspace">
           <section className="primaryStack">
@@ -76,7 +83,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   ))}
                 </div>
               </div>
-              <SourceFeed items={filtered} />
+              <SourceFeed items={filtered} citationNumbers={citationNumbers} />
             </section>
 
             <section className="card">
@@ -94,7 +101,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   </button>
                 </div>
               </div>
-              {view === "connections" ? <Connections items={data.connections} sources={visibleSources} /> : <Sentiment rows={chartRows} sources={sentimentSources} />}
+              {view === "connections" ? <Connections items={topConnections} sources={visibleSources} citationNumbers={citationNumbers} sourceById={sourceById} /> : <Sentiment rows={chartRows} sources={sentimentSources} />}
             </section>
           </section>
         </div>
@@ -103,11 +110,8 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   );
 }
 
-function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[] }) {
+function Overview({ data, citationNumbers, sourceById }: { data: DashboardData; citationNumbers: Map<string, number>; sourceById: Map<string, SourceItem> }) {
   const overviewParagraphs = splitParagraphs(data.summary?.overview || "");
-  const citationIds = unique(overviewParagraphs.flatMap(extractCitationIds));
-  const citationNumbers = new Map(citationIds.map((id, index) => [id, index + 1]));
-  const sourceById = new Map(sources.map((source) => [source.id, source]));
 
   return (
     <section className="card overviewCard">
@@ -121,11 +125,9 @@ function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[
         <div className="overviewReadout">
           {overviewParagraphs.length ? (
             overviewParagraphs.map((paragraph, index) => {
-              const ids = extractCitationIds(paragraph);
               return (
                 <p key={index}>
-                  {cleanSignal(paragraph)}
-                  <CitationGroup ids={ids} citationNumbers={citationNumbers} sourceById={sourceById} />
+                  {renderInlineCitations(paragraph, citationNumbers, sourceById)}
                 </p>
               );
             })
@@ -166,48 +168,80 @@ function CitationGroup({ ids, citationNumbers, sourceById }: { ids: string[]; ci
   );
 }
 
-function SourceFeed({ items }: { items: SourceItem[] }) {
+function renderInlineCitations(value: string, citationNumbers: Map<string, number>, sourceById: Map<string, SourceItem>) {
+  const parts: ReactNode[] = [];
+  const pattern = /\b[a-z_]+:[0-9a-f]{8,}\b/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(value)) !== null) {
+    const id = match[0];
+    if (match.index > lastIndex) parts.push(value.slice(lastIndex, match.index));
+    const number = citationNumbers.get(id);
+    const source = sourceById.get(id);
+    parts.push(
+      <sup className="citationGroup" key={`${id}-${match.index}`}>
+        {number ? (
+          source ? (
+            <a href={`#${sourceAnchorId(id)}`} title={source.title || id}>
+              [{number}]
+            </a>
+          ) : (
+            <a href="#sources" title={id}>
+              [{number}]
+            </a>
+          )
+        ) : null}
+      </sup>,
+    );
+    lastIndex = pattern.lastIndex;
+  }
+  if (lastIndex < value.length) parts.push(value.slice(lastIndex));
+  return parts.length ? parts : cleanSignal(value);
+}
+
+function SourceFeed({ items, citationNumbers }: { items: SourceItem[]; citationNumbers: Map<string, number> }) {
   if (!items.length) return <div className="emptyState">No source rows found for this ticker.</div>;
   return (
     <div className="sourceFeed">
-      {items.map((item) => (
-        <article id={sourceAnchorId(item.id)} className={item.cited ? "sourceRow cited" : "sourceRow"} key={item.id}>
-          <div className="sourceBadge" style={{ color: color(item.source) }}>
-            <span>{label(item.source)}</span>
-            <small>{formatDate(item.publishedAt)}</small>
-          </div>
-          <div className="sourceCopy">
-            <strong>{item.title || `${label(item.source)} source item`}</strong>
-            <p>{item.summary}</p>
-            <div className="tagLine">
-              <span className={`sentiment ${item.sentiment}`}>{item.sentiment}</span>
-              <span>relevance {item.relevance}</span>
-              {item.firsthand ? <span>firsthand {item.firsthandType || ""}</span> : null}
-              {item.cited ? <span>cited</span> : null}
+      {items.map((item) => {
+        const citationNumber = citationNumbers.get(item.id);
+        return (
+          <article id={sourceAnchorId(item.id)} className={item.cited || citationNumber ? "sourceRow cited" : "sourceRow"} key={item.id}>
+            <div className="sourceBadge" style={{ color: color(item.source) }}>
+              {citationNumber ? <span className="sourceRefBadge">Excerpt [{citationNumber}]</span> : null}
+              <span>{label(item.source)}</span>
+              <small>{formatDate(item.publishedAt)}</small>
             </div>
-          </div>
-          {item.sourceUrl ? (
-            <a className="external" href={item.sourceUrl} target="_blank" aria-label="Open source">
-              <ExternalLink size={16} />
-            </a>
-          ) : null}
-        </article>
-      ))}
+            <div className="sourceCopy">
+              <strong>{item.title || `${label(item.source)} source item`}</strong>
+              <p>{item.summary}</p>
+              <div className="tagLine">
+                <span className={`sentiment ${item.sentiment}`}>{item.sentiment}</span>
+                <span>relevance {item.relevance}</span>
+                {item.firsthand ? <span>firsthand {item.firsthandType || ""}</span> : null}
+                {item.cited ? <span>cited</span> : null}
+              </div>
+            </div>
+            {item.sourceUrl ? (
+              <a className="external" href={item.sourceUrl} target="_blank" aria-label="Open source">
+                <ExternalLink size={16} />
+              </a>
+            ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }
 
-function Connections({ items, sources }: { items: ConnectionItem[]; sources: SourceItem[] }) {
-  const topItems = dedupeConnections(items).slice(0, 5);
-  const sourceById = new Map(sources.map((source) => [source.id, source]));
-  if (!topItems.length) return <div className="emptyState">No verified connections found for this ticker yet.</div>;
+function Connections({ items, sources, citationNumbers, sourceById }: { items: ConnectionItem[]; sources: SourceItem[]; citationNumbers: Map<string, number>; sourceById: Map<string, SourceItem> }) {
+  if (!items.length) return <div className="emptyState">No verified connections found for this ticker yet.</div>;
   return (
     <div className="connectionList">
-      {topItems.map((item, index) => {
+      {items.map((item, index) => {
         const headline = connectionRead(item);
         const support = connectionSupport(item, headline);
         const citationIds = connectionCitationIds(item, sources);
-        const citationNumbers = new Map(citationIds.map((id, citationIndex) => [id, citationIndex + 1]));
         return (
           <article className="connectionCard" key={item.id}>
             <div className="connectionRank">#{index + 1}</div>
