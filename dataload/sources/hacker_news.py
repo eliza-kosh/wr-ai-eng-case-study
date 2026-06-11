@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import collections
 import datetime as dt
+import html
 import logging
 import os
+import re
 from typing import Any
 
 import requests
@@ -115,6 +118,14 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
             story_url = story.get("url") or story.get("story_url")
             hn_url = f"https://news.ycombinator.com/item?id={story_id}"
             published_at = parse_datetime(story.get("created_at"))
+            story_text = clean_hn_text(story.get("story_text") or story.get("text"))
+            comments = story.get("comments", [])
+            story_body = build_story_body(
+                title=title,
+                story_text=story_text,
+                outbound_url=story_url,
+                comments=comments,
+            )
 
             normalized.append(
                 {
@@ -123,7 +134,7 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
                     "source": self.source,
                     "source_url": hn_url,
                     "title": title,
-                    "body": story_url,
+                    "body": story_body,
                     "author": story.get("author"),
                     "published_at": published_at,
                     "fetched_at": fetched_at,
@@ -134,6 +145,8 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
                         "outbound_url": story_url,
                         "points": story.get("points"),
                         "num_comments": story.get("num_comments"),
+                        "comment_count_fetched": len(comments),
+                        "has_story_text": bool(story_text),
                         "tags": story.get("_tags"),
                     },
                 }
@@ -152,7 +165,12 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
                         "source": self.source,
                         "source_url": hn_url,
                         "title": title,
-                        "body": comment.get("text"),
+                        "body": build_comment_body(
+                            title=title,
+                            story_text=story_text,
+                            outbound_url=story_url,
+                            comment=comment,
+                        ),
                         "author": comment.get("author"),
                         "published_at": parse_datetime(comment.get("created_at")),
                         "fetched_at": fetched_at,
@@ -161,6 +179,7 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
                             "native_id": comment_id,
                             "story_id": story_id,
                             "query": story.get("query"),
+                            "has_story_text": bool(story_text),
                         },
                     }
                 )
@@ -199,11 +218,74 @@ class HackerNewsDataloadRunner(SourceDataloadRunner):
         """Fetch a bounded set of comments for one HN story."""
         payload = self.hn_get(f"items/{story_id}")
         comments: list[dict[str, Any]] = []
-        stack = list(payload.get("children") or [])
-        while stack and len(comments) < COMMENT_LIMIT_PER_STORY:
-            comment = stack.pop(0)
+        queue: collections.deque[Any] = collections.deque(payload.get("children") or [])
+        while queue and len(comments) < COMMENT_LIMIT_PER_STORY:
+            comment = queue.popleft()
             if not isinstance(comment, dict):
                 continue
             comments.append(comment)
-            stack.extend(comment.get("children") or [])
+            queue.extend(comment.get("children") or [])
         return comments
+
+
+def clean_hn_text(value: Any) -> str:
+    """Convert Algolia/HN HTML-ish text into readable plain text."""
+    if value is None:
+        return ""
+    text = html.unescape(str(value))
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"<p>", "\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def build_story_body(
+    title: str | None,
+    story_text: str,
+    outbound_url: str | None,
+    comments: list[dict[str, Any]],
+) -> str:
+    """Build the full story text used by enrichment, search, and connections."""
+    sections = []
+    if title:
+        sections.append(f"Story title: {title}")
+    if story_text:
+        sections.append(f"Story text:\n{story_text}")
+    if outbound_url:
+        sections.append(f"Outbound URL: {outbound_url}")
+
+    comment_lines = []
+    for idx, comment in enumerate(comments, start=1):
+        text = clean_hn_text(comment.get("text"))
+        if not text:
+            continue
+        author = comment.get("author") or "unknown"
+        comment_lines.append(f"{idx}. {author}: {text}")
+    if comment_lines:
+        sections.append("Fetched comment thread:\n" + "\n\n".join(comment_lines))
+
+    return "\n\n".join(sections).strip()
+
+
+def build_comment_body(
+    title: str | None,
+    story_text: str,
+    outbound_url: str | None,
+    comment: dict[str, Any],
+) -> str:
+    """Preserve story context alongside each normalized HN comment."""
+    sections = []
+    if title:
+        sections.append(f"Story title: {title}")
+    if story_text:
+        sections.append(f"Story text:\n{story_text}")
+    if outbound_url:
+        sections.append(f"Outbound URL: {outbound_url}")
+    comment_text = clean_hn_text(comment.get("text"))
+    if comment_text:
+        author = comment.get("author") or "unknown"
+        sections.append(f"Comment by {author}:\n{comment_text}")
+    return "\n\n".join(sections).strip()

@@ -44,20 +44,6 @@ class EmbeddedItem:
 
 
 @dataclass(frozen=True)
-class ConnectionCandidate:
-    item_a_id: str
-    item_b_id: str
-    ticker: str
-    source_a: str
-    source_b: str
-    published_a: dt.datetime | None
-    published_b: dt.datetime | None
-    summary_a: str
-    summary_b: str
-    similarity: float
-
-
-@dataclass(frozen=True)
 class ConnectionVerification:
     valid: bool
     confidence: float

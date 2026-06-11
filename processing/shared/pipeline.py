@@ -8,7 +8,7 @@ from typing import Any
 
 from shared.citations import extract_cited_item_ids, find_invalid_citations
 from shared.config import ProcessingConfig
-from shared.models import ConnectionCandidate, ConnectionVerification
+from shared.models import ConnectionVerification
 from shared.openai_client import OpenAIProcessorClient
 from shared.storage import ProcessingStore
 
@@ -204,16 +204,6 @@ class ProcessingRunner:
             except Exception:
                 logging.exception("Summary generation failed ticker=%s", ticker)
         return count
-
-    def _heuristic_connection(self, candidate: ConnectionCandidate) -> ConnectionVerification:
-        """Reject broad semantic links when model verification is unavailable."""
-        return ConnectionVerification(
-            valid=False,
-            confidence=0.0,
-            narrative="",
-            stock_relevance="",
-            connection_type="corroborating",
-        )
 
     def _heuristic_summary(self, ticker: str, context: dict[str, Any]) -> dict[str, Any]:
         """Build a deterministic ticker overview from enriched items and connections."""

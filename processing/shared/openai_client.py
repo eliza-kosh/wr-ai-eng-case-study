@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 from shared.config import ProcessingConfig
 from shared.models import (
-    ConnectionCandidate,
     ConnectionClusterCandidate,
     ConnectionVerification,
     EnrichmentResult,
@@ -111,37 +110,6 @@ class OpenAIProcessorClient:
             if getattr(block, "type", None) == "tool_use" and block.name == "submit_summary":
                 return dict(block.input)
         raise ValueError(f"Claude did not return a submit_summary tool call for {ticker}")
-
-    def verify_connection(self, candidate: ConnectionCandidate) -> ConnectionVerification:
-        """Ask Claude whether a candidate pair is a genuine cross-source insight."""
-        prompt = _connection_prompt(candidate)
-        response = self._anthropic.messages.create(
-            model=self.config.anthropic_summary_model,
-            max_tokens=1024,
-            system=_CONNECTION_SYSTEM,
-            messages=[{"role": "user", "content": prompt}],
-            tools=[
-                {
-                    "name": "submit_verification",
-                    "description": "Submit the connection verification decision.",
-                    "input_schema": CONNECTION_TOOL_SCHEMA,
-                }
-            ],
-            tool_choice={"type": "tool", "name": "submit_verification"},
-        )
-        for block in response.content:
-            if getattr(block, "type", None) == "tool_use" and block.name == "submit_verification":
-                data = block.input
-                return ConnectionVerification(
-                    valid=bool(data["valid"]),
-                    confidence=float(data["confidence"]),
-                    narrative=str(data["narrative"]),
-                    stock_relevance=str(data["stock_relevance"]),
-                    connection_type=data.get("connection_type", "corroborating"),
-                )
-        raise ValueError(
-            f"Claude did not return submit_verification for {candidate.item_a_id}/{candidate.item_b_id}"
-        )
 
     def verify_connection_cluster(self, candidate: ConnectionClusterCandidate) -> ConnectionVerification:
         """Ask Claude whether a semantic item cluster contains a real business connection."""
@@ -474,31 +442,6 @@ def _summary_prompt(ticker: str, context: dict[str, Any]) -> str:
     return "\n\n".join(parts)
 
 
-CONNECTION_TOOL_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "valid": {"type": "boolean"},
-        "rejection_reason": {"type": ["string", "null"]},
-        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-        "narrative": {"type": "string"},
-        "stock_relevance": {"type": "string"},
-        "connection_type": {
-            "type": "string",
-            "enum": ["causal", "corroborating", "contradicting", "leading_indicator"],
-        },
-    },
-    "required": [
-        "valid",
-        "rejection_reason",
-        "confidence",
-        "narrative",
-        "stock_relevance",
-        "connection_type",
-    ],
-}
-
-
 CONNECTION_CLUSTER_TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -587,77 +530,6 @@ rejected_item_ids: noisy, duplicate, or tangential item IDs from the input.
 
 When valid=false, set connection_title="", narrative="", and stock_relevance="", and explain the rejection.\
 """
-
-
-_CONNECTION_SYSTEM = """\
-You are a buy-side equity analyst deciding whether two alternative-data items form a genuine \
-cross-source insight worth surfacing to a portfolio manager.
-
-GOLDEN RULE: A valid connection exists only when seeing both items together reveals something \
-an analyst could not learn from either item alone. If the insight is "both sources said the \
-same thing," that is not a connection — it is noise. Reject it.
-
-MANDATORY REJECTION CRITERIA — reject immediately if any apply:
-1. Both items announce the same event, release, or news story. Two posts about the same ROCm \
-release are the same press release appearing in two places, not a connection.
-2. Neither item contains firsthand experience, original opinion, or independent user/operator \
-behavior. Announcements and link reposts with no commentary carry no signal.
-3. The insight reduces to "two sources reported X." Same direction + same topic = not a connection.
-4. The items share a theme but produce no corroboration, no tension, no causal chain — nothing \
-that would inform a question about revenue, margins, adoption, churn, or competitive position.
-
-WHAT MAKES A CONNECTION VALID:
-  - Source A reveals a cause (internal change, product regression, pricing move). Source B \
-independently shows the downstream effect (customer behavior, developer response, churn signal).
-  - One source shows a developer or operator frustration. Another shows a business or procurement \
-consequence flowing from that same frustration.
-  - A benchmark or performance claim from one community is independently corroborated by \
-real-world deployment data from a different community — not just echoed.
-
-NARRATIVE — when valid=true, write one continuous paragraph of 3–4 sentences. No numbered \
-steps. No bullet points. No section headers. One flowing paragraph, written the way an analyst \
-would say this out loud to a PM.
-
-The paragraph should move naturally through: what one source observed → what the other source \
-independently observed → what those two things together imply that neither alone would → why \
-that matters for the stock. These are not labels, they are the natural shape of a good story.
-
-Example of the right voice:
-"Glassdoor reviews from former sales engineers describe a Q1 reorg eliminating regional account \
-managers. Two months later, enterprise customers on Reddit report support response times doubling. \
-The internal restructuring appears to be directly degrading customer-facing service quality — and \
-management hasn't acknowledged it on any earnings call. If the support deterioration is sustained, \
-it becomes a retention risk at renewal time."
-
-Do not write: "Source A reports... Separately, Source B reports..." — that is a list, not a story. \
-Do not use: "semantic similarity," "cross-source agreement," "corroboration," "alternative-data," \
-"firsthand evidence," or any phrase that belongs in an engineering document rather than a brief.
-
-stock_relevance: one sentence — the direct implication for revenue, margins, competitive \
-position, or adoption. This is the "so what" extracted from the narrative for quick scanning.
-
-When valid=false, set narrative="" and stock_relevance="" and explain the rejection briefly.\
-"""
-
-
-def _connection_prompt(candidate: ConnectionCandidate) -> str:
-    src_a = candidate.source_a.replace("_", " ").title()
-    src_b = candidate.source_b.replace("_", " ").title()
-
-    pub_a = candidate.published_a.strftime("%Y-%m-%d") if candidate.published_a else "unknown date"
-    pub_b = candidate.published_b.strftime("%Y-%m-%d") if candidate.published_b else "unknown date"
-
-    return (
-        f"TICKER: {candidate.ticker}\n\n"
-        f"--- SOURCE A: {src_a} (published {pub_a}) ---\n"
-        f"{(candidate.summary_a or '').strip()}\n\n"
-        f"--- SOURCE B: {src_b} (published {pub_b}) ---\n"
-        f"{(candidate.summary_b or '').strip()}\n\n"
-        f"Do these two items together create a useful investable signal through corroboration, "
-        f"tension, customer/developer behavior, or a causal explanation? Apply the rejection "
-        f"criteria, but mark valid=true when the combined signal is specific enough to brief a "
-        f"portfolio manager."
-    )
 
 
 def _connection_cluster_prompt(candidate: ConnectionClusterCandidate) -> str:

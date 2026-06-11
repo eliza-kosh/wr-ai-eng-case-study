@@ -82,7 +82,6 @@ def reset_processing_outputs(runner: ProcessingRunner) -> dict[str, int]:
     tables = [
         "brain_summaries",
         "connection_clusters",
-        "item_connections",
         "item_embeddings",
         "item_enrichments",
         "sentiment_weekly",
@@ -100,7 +99,6 @@ def reset_synthesis_outputs(runner: ProcessingRunner) -> dict[str, int]:
     tables = [
         "brain_summaries",
         "connection_clusters",
-        "item_connections",
         "sentiment_weekly",
     ]
     counts: dict[str, int] = {}
@@ -147,7 +145,6 @@ def table_counts(runner: ProcessingRunner) -> dict[str, int]:
         "source_items",
         "item_enrichments",
         "item_embeddings",
-        "item_connections",
         "connection_clusters",
         "brain_summaries",
         "sentiment_weekly",

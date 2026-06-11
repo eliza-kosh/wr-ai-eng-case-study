@@ -65,6 +65,8 @@ class FakeStore:
 
     def prune_connections_outside_window(self) -> int: return 0
 
+    def count_valid_connection_clusters(self, ticker: str) -> int: return len(self.connections)
+
     def fetch_connection_cluster_candidates(self, ticker: str) -> list[ConnectionClusterCandidate]:
         return [
             ConnectionClusterCandidate(

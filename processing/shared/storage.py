@@ -11,7 +11,6 @@ from typing import Any
 
 from shared.config import ProcessingConfig
 from shared.models import (
-    ConnectionCandidate,
     ConnectionClusterCandidate,
     ConnectionClusterItem,
     EmbeddedItem,
@@ -94,29 +93,6 @@ class ProcessingStore:
 
         create index if not exists item_embeddings_embedding_ivfflat_idx
             on item_embeddings using ivfflat (embedding vector_cosine_ops) with (lists = 100);
-
-        create table if not exists item_connections (
-            connection_id text primary key,
-            ticker text not null,
-            item_a_id text not null references source_items(source_item_id) on delete cascade,
-            item_b_id text not null references source_items(source_item_id) on delete cascade,
-            source_a text not null,
-            source_b text not null,
-            similarity double precision not null,
-            valid boolean not null,
-            confidence double precision not null,
-            narrative text not null,
-            stock_relevance text not null,
-            connection_type text not null,
-            model text not null,
-            run_id text references processing_runs(run_id),
-            verified_at timestamptz not null default now(),
-            metadata jsonb not null default '{{}}',
-            constraint item_connections_pair_unique unique (ticker, item_a_id, item_b_id)
-        );
-
-        create index if not exists item_connections_ticker_valid_confidence_idx
-            on item_connections(ticker, valid, confidence desc, verified_at desc);
 
         create table if not exists connection_clusters (
             cluster_id text primary key,
@@ -403,68 +379,6 @@ class ProcessingStore:
             ).fetchall()
         return [row["ticker"] for row in rows]
 
-    def fetch_connection_candidates(self, ticker: str) -> list[ConnectionCandidate]:
-        sql = """
-        select least(a.source_item_id, b.source_item_id) as item_a_id,
-               greatest(a.source_item_id, b.source_item_id) as item_b_id,
-               a.ticker,
-               case when a.source_item_id <= b.source_item_id then a.source else b.source end as source_a,
-               case when a.source_item_id <= b.source_item_id then b.source else a.source end as source_b,
-               case when a.source_item_id <= b.source_item_id then a.published_at else b.published_at end as published_a,
-               case when a.source_item_id <= b.source_item_id then b.published_at else a.published_at end as published_b,
-               case when a.source_item_id <= b.source_item_id then a.summary else b.summary end as summary_a,
-               case when a.source_item_id <= b.source_item_id then b.summary else a.summary end as summary_b,
-               1 - (a.embedding <=> b.embedding) as similarity
-        from item_embeddings a
-        join item_embeddings b
-          on a.ticker = b.ticker
-         and a.source_item_id < b.source_item_id
-         and a.source <> b.source
-        left join item_connections existing
-          on existing.ticker = a.ticker
-         and existing.item_a_id = least(a.source_item_id, b.source_item_id)
-         and existing.item_b_id = greatest(a.source_item_id, b.source_item_id)
-        where a.ticker = %s
-          and existing.connection_id is null
-          and (1 - (a.embedding <=> b.embedding)) >= %s
-          and (a.published_at is null or a.published_at >= now() - %s * interval '1 second')
-          and (b.published_at is null or b.published_at >= now() - %s * interval '1 second')
-          and (
-              a.published_at is null or b.published_at is null or
-              abs(extract(epoch from (a.published_at - b.published_at))) <= %s
-          )
-        order by similarity desc
-        limit %s
-        """
-        seconds = self.config.temporal_window_days * 24 * 60 * 60
-        with self._connect() as conn:
-            rows = conn.execute(
-                sql,
-                (
-                    ticker,
-                    self.config.similarity_threshold,
-                    seconds,
-                    seconds,
-                    seconds,
-                    self.config.max_connection_candidates_per_ticker,
-                ),
-            ).fetchall()
-        return [
-            ConnectionCandidate(
-                item_a_id=row["item_a_id"],
-                item_b_id=row["item_b_id"],
-                ticker=row["ticker"],
-                source_a=row["source_a"],
-                source_b=row["source_b"],
-                published_a=row["published_a"],
-                published_b=row["published_b"],
-                summary_a=row["summary_a"],
-                summary_b=row["summary_b"],
-                similarity=float(row["similarity"]),
-            )
-            for row in rows
-        ]
-
     def fetch_connection_cluster_candidates(self, ticker: str) -> list[ConnectionClusterCandidate]:
         """Build semantic-neighborhood clusters from high-signal anchor items."""
         window_seconds = self.config.temporal_window_days * 24 * 60 * 60
@@ -644,69 +558,9 @@ class ProcessingStore:
             )
             conn.commit()
 
-    def upsert_connection(self, candidate: ConnectionCandidate, verification: Any, model: str, run_id: str) -> None:
-        from psycopg.types.json import Jsonb
-
-        with self._connect() as conn:
-            conn.execute(
-                """
-                insert into item_connections (
-                    connection_id, ticker, item_a_id, item_b_id, source_a, source_b,
-                    similarity, valid, confidence, narrative, stock_relevance,
-                    connection_type, model, run_id, verified_at, metadata
-                )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                on conflict (ticker, item_a_id, item_b_id) do update set
-                    similarity = excluded.similarity,
-                    valid = excluded.valid,
-                    confidence = excluded.confidence,
-                    narrative = excluded.narrative,
-                    stock_relevance = excluded.stock_relevance,
-                    connection_type = excluded.connection_type,
-                    model = excluded.model,
-                    run_id = excluded.run_id,
-                    verified_at = excluded.verified_at,
-                    metadata = excluded.metadata
-                """,
-                (
-                    f"conn-{uuid.uuid4().hex}",
-                    candidate.ticker,
-                    candidate.item_a_id,
-                    candidate.item_b_id,
-                    candidate.source_a,
-                    candidate.source_b,
-                    candidate.similarity,
-                    verification.valid,
-                    verification.confidence,
-                    verification.narrative,
-                    verification.stock_relevance,
-                    verification.connection_type,
-                    model,
-                    run_id,
-                    utc_now(),
-                    Jsonb({"candidate": _jsonable_candidate(candidate)}),
-                ),
-            )
-            conn.commit()
-
     def prune_connections_outside_window(self) -> int:
         """Remove stored connections whose linked items fall outside the active lookback."""
         window_seconds = self.config.temporal_window_days * 24 * 60 * 60
-        pair_sql = """
-        delete from item_connections ic
-        using item_embeddings ea, item_embeddings eb
-        where ea.source_item_id = ic.item_a_id
-          and eb.source_item_id = ic.item_b_id
-          and (
-              (ea.published_at is not null and ea.published_at < now() - %s * interval '1 second')
-              or (eb.published_at is not null and eb.published_at < now() - %s * interval '1 second')
-              or (
-                  ea.published_at is not null
-                  and eb.published_at is not null
-                  and abs(extract(epoch from (ea.published_at - eb.published_at))) > %s
-              )
-          )
-        """
         cluster_sql = """
         delete from connection_clusters cc
         where not exists (
@@ -717,10 +571,9 @@ class ProcessingStore:
         )
         """
         with self._connect() as conn:
-            pair_result = conn.execute(pair_sql, (window_seconds, window_seconds, window_seconds))
             cluster_result = conn.execute(cluster_sql, (window_seconds,))
             conn.commit()
-            return (pair_result.rowcount or 0) + (cluster_result.rowcount or 0)
+            return cluster_result.rowcount or 0
 
     def fetch_initial_summary_context(self, ticker: str, per_source: int) -> tuple[dict[str, Any], set[str]]:
         context: dict[str, Any] = {"items_by_source": {}, "connections": []}
@@ -903,10 +756,6 @@ def _jaccard_overlap(left: set[str], right: set[str]) -> float:
     if not left or not right:
         return 0.0
     return len(left & right) / len(left | right)
-
-
-def _jsonable_candidate(candidate: ConnectionCandidate) -> dict[str, Any]:
-    return json.loads(json.dumps(candidate.__dict__, default=str))
 
 
 def _jsonable_cluster_candidate(candidate: ConnectionClusterCandidate) -> dict[str, Any]:

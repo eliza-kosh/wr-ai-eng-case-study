@@ -16,7 +16,6 @@ TABLES = (
     "item_enrichments",
     "item_embeddings",
     "connection_clusters",
-    "item_connections",
     "brain_summaries",
     "sentiment_weekly",
 )

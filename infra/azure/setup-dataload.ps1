@@ -89,6 +89,12 @@ az postgres flexible-server db create `
     --server-name $postgresServer `
     --name $postgresDb
 
+az postgres flexible-server parameter set `
+    --resource-group $ResourceGroup `
+    --server-name $postgresServer `
+    --name azure.extensions `
+    --value vector 1>$null
+
 az postgres flexible-server firewall-rule create `
     --resource-group $ResourceGroup `
     --server-name $postgresServer `
@@ -183,9 +189,9 @@ $appSettings = @(
     "APPLICATIONINSIGHTS_CONNECTION_STRING=$appInsightsConnectionString",
     "SCM_DO_BUILD_DURING_DEPLOYMENT=true",
     "ENABLE_ORYX_BUILD=true",
-    "REDDIT_DATALOAD_SCHEDULE=0 0 */6 * * *",
-    "HACKER_NEWS_DATALOAD_SCHEDULE=0 30 */6 * * *",
-    "GITHUB_DATALOAD_SCHEDULE=0 0 */12 * * *"
+    "REDDIT_DATALOAD_SCHEDULE=0 0 10 * * *",
+    "HACKER_NEWS_DATALOAD_SCHEDULE=0 0 10 * * *",
+    "GITHUB_DATALOAD_SCHEDULE=0 0 10 * * *"
 )
 
 if ($githubSecretExists -gt 0) {

@@ -61,7 +61,9 @@ class SourceDataloadRunner:
 
     def run_partition(self, partition: DataloadPartition) -> None:
         """Run one source+ticker load."""
-        window = self.next_window(partition)
+        store = PostgresStore.from_env()
+        store.ensure_schema()
+        window = self.next_window(partition, store)
         run = DataloadRun(
             run_id=self.new_run_id(partition),
             partition=partition,
@@ -87,8 +89,6 @@ class SourceDataloadRunner:
         #
         # If any step fails, mark the run failed and do not let it advance the
         # next computed watermark.
-        store = PostgresStore.from_env()
-        store.ensure_schema()
         store.start_run(run, self.metadata(run))
         try:
             records = self.fetch(run)
@@ -105,14 +105,14 @@ class SourceDataloadRunner:
         suffix = uuid.uuid4().hex[:8]
         return f"{partition.source}-{partition.ticker}-{timestamp}-{suffix}"
 
-    def next_window(self, partition: DataloadPartition) -> DataloadWindow:
+    def next_window(self, partition: DataloadPartition, store: "PostgresStore | None" = None) -> DataloadWindow:
         """Compute the next source timestamp window.
 
         Implementation should query max(source_window_end) from successful
         dataload_runs for this source+ticker, then subtract self.lookback.
         """
         now = dt.datetime.now(dt.UTC)
-        last_successful_end = self.load_last_successful_window_end(partition)
+        last_successful_end = self.load_last_successful_window_end(partition, store)
         start = (
             last_successful_end - self.lookback
             if last_successful_end
@@ -121,11 +121,12 @@ class SourceDataloadRunner:
         return DataloadWindow(start=start, end=now)
 
     def load_last_successful_window_end(
-        self, partition: DataloadPartition
+        self, partition: DataloadPartition, store: "PostgresStore | None" = None
     ) -> dt.datetime | None:
         """Load max successful source_window_end for source+ticker from PostgreSQL."""
-        store = PostgresStore.from_env()
-        store.ensure_schema()
+        if store is None:
+            store = PostgresStore.from_env()
+            store.ensure_schema()
         return store.last_successful_window_end(partition.source, partition.ticker)
 
     def fetch(self, run: DataloadRun) -> list[dict[str, Any]]:

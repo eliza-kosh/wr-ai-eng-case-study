@@ -18,8 +18,6 @@ export type ConnectionItem = {
   itemIds: string[];
   sourceA: string;
   sourceB: string;
-  sourceAText: string | null;
-  sourceBText: string | null;
   confidence: number;
   title: string;
   connectionTitle: string;
@@ -84,11 +82,11 @@ async function getSources(ticker: string): Promise<SourceItem[]> {
 }
 
 async function getConnections(ticker: string): Promise<ConnectionItem[]> {
-  const rows = await query<{ connection_id: string; item_ids: string[]; source_a: string; source_b: string; source_a_text: string | null; source_b_text: string | null; confidence: number; title: string; connection_title: string; narrative: string; stock_relevance: string; connection_type: string }>(
-    `select cc.cluster_id as connection_id,cc.item_ids,array_to_string(cc.sources,' + ') as source_a,'' as source_b,string_agg(coalesce(nullif(ie.summary,''),nullif(left(si.body,220),''),nullif(si.title,'')), E'\\n\\n' order by ie.relevance desc nulls last) filter (where si.source_item_id = any(cc.item_ids[1:3])) as source_a_text,null::text as source_b_text,cc.confidence,coalesce(nullif(cc.connection_title,''),nullif(split_part(cc.narrative,'.',1) || '.','.'),cc.stock_relevance,'Connection') as title,cc.connection_title,cc.narrative,cc.stock_relevance,cc.connection_type from connection_clusters cc left join source_items si on si.source_item_id = any(cc.item_ids) left join item_enrichments ie on ie.source_item_id=si.source_item_id where cc.ticker=$1 and cc.valid=true group by cc.cluster_id,cc.item_ids,cc.sources,cc.confidence,cc.connection_title,cc.narrative,cc.stock_relevance,cc.connection_type,cc.verified_at order by cc.confidence desc,cc.verified_at desc limit 24`,
+  const rows = await query<{ connection_id: string; item_ids: string[]; source_a: string; source_b: string; confidence: number; title: string; connection_title: string; narrative: string; stock_relevance: string; connection_type: string }>(
+    `select cc.cluster_id as connection_id,cc.item_ids,array_to_string(cc.sources,' + ') as source_a,'' as source_b,cc.confidence,coalesce(nullif(cc.connection_title,''),nullif(split_part(cc.narrative,'.',1) || '.','.'),cc.stock_relevance,'Connection') as title,cc.connection_title,cc.narrative,cc.stock_relevance,cc.connection_type from connection_clusters cc where cc.ticker=$1 and cc.valid=true order by cc.confidence desc,cc.verified_at desc limit 24`,
     [ticker],
   );
-  return rows.map((r) => ({ id: r.connection_id, itemIds: r.item_ids || [], sourceA: r.source_a, sourceB: r.source_b, sourceAText: r.source_a_text, sourceBText: r.source_b_text, confidence: Number(r.confidence), title: r.title, connectionTitle: r.connection_title, narrative: r.narrative, stockRelevance: r.stock_relevance, connectionType: r.connection_type }));
+  return rows.map((r) => ({ id: r.connection_id, itemIds: r.item_ids || [], sourceA: r.source_a, sourceB: r.source_b, confidence: Number(r.confidence), title: r.title, connectionTitle: r.connection_title, narrative: r.narrative, stockRelevance: r.stock_relevance, connectionType: r.connection_type }));
 }
 
 
