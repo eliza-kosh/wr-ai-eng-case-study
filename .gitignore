@@ -1,4 +1,4 @@
-﻿# Secrets
+# Secrets
 .env
 .env.*
 !.env.example
@@ -21,7 +21,13 @@ processing/local.settings.json
 processing/.python_packages/
 
 # Local artifacts
-apps/
+apps/*
+!apps/dashboard/
+!apps/dashboard/**
+apps/dashboard/.env.local
+apps/dashboard/node_modules/
+apps/dashboard/.next/
+apps/dashboard/tsconfig.tsbuildinfo
 notebooks/**/.ipynb_checkpoints/
 notebooks/**/outputs/
 data/

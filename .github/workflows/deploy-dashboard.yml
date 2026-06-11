@@ -1,0 +1,126 @@
+name: Deploy Dashboard Container App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/dashboard/**"
+      - ".github/workflows/deploy-dashboard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AZURE_RESOURCE_GROUP: eliza-ai-workbench-rg
+  AZURE_LOCATION: eastus
+  CONTAINER_APP_ENV: wr-dashboard-env
+  CONTAINER_APP_NAME: wr-dashboard
+  ACR_NAME: elizaaiworkbenchacr58415
+  ACR_LOGIN_SERVER: elizaaiworkbenchacr58415.azurecr.io
+  IMAGE_NAME: wr-dashboard
+  KEY_VAULT_NAME: elizaaiworkben-kv-58415
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Azure resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          az provider register -n Microsoft.App --wait
+          az provider register -n Microsoft.ContainerRegistry --wait
+          az provider register -n Microsoft.OperationalInsights --wait
+
+          if ! az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$ACR_NAME" >/dev/null 2>&1; then
+            az acr create \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$ACR_NAME" \
+              --sku Basic \
+              --admin-enabled true \
+              --location "$AZURE_LOCATION"
+          fi
+
+          az acr update --name "$ACR_NAME" --admin-enabled true >/dev/null
+
+          if ! az containerapp env show --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_APP_ENV" >/dev/null 2>&1; then
+            az containerapp env create \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$CONTAINER_APP_ENV" \
+              --location "$AZURE_LOCATION"
+          fi
+
+      - name: Build and push image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="${GITHUB_SHA::12}"
+          IMAGE="$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          az acr login --name "$ACR_NAME"
+          docker build -t "$IMAGE" apps/dashboard
+          docker push "$IMAGE"
+
+      - name: Deploy Container App
+        shell: bash
+        run: |
+          set -euo pipefail
+          POSTGRES_DSN="$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name azure-postgres-dsn --query value -o tsv)"
+          ACR_USERNAME="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
+          ACR_PASSWORD="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
+
+          if az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_APP_NAME" >/dev/null 2>&1; then
+            az containerapp registry set \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$CONTAINER_APP_NAME" \
+              --server "$ACR_LOGIN_SERVER" \
+              --username "$ACR_USERNAME" \
+              --password "$ACR_PASSWORD"
+            az containerapp secret set \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$CONTAINER_APP_NAME" \
+              --secrets postgres-dsn="$POSTGRES_DSN"
+            az containerapp update \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$CONTAINER_APP_NAME" \
+              --image "$IMAGE" \
+              --set-env-vars AZURE_POSTGRES_DSN=secretref:postgres-dsn
+            az containerapp ingress enable \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$CONTAINER_APP_NAME" \
+              --type external \
+              --target-port 3000
+          else
+            az containerapp create \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$CONTAINER_APP_NAME" \
+              --environment "$CONTAINER_APP_ENV" \
+              --image "$IMAGE" \
+              --ingress external \
+              --target-port 3000 \
+              --registry-server "$ACR_LOGIN_SERVER" \
+              --registry-username "$ACR_USERNAME" \
+              --registry-password "$ACR_PASSWORD" \
+              --secrets postgres-dsn="$POSTGRES_DSN" \
+              --env-vars AZURE_POSTGRES_DSN=secretref:postgres-dsn
+          fi
+
+      - name: Print URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          FQDN="$(az containerapp show --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_APP_NAME" --query properties.configuration.ingress.fqdn -o tsv)"
+          echo "Dashboard URL: https://$FQDN"
