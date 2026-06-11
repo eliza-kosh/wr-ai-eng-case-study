@@ -239,7 +239,6 @@ function Connections({ items, citationNumbers, sourceById }: { items: Connection
                 <p key={paragraphIndex}>{paragraph}</p>
               ))}
               <small>
-                Evidence: {label(item.sourceA)} and {label(item.sourceB)}
                 <CitationGroup ids={citationIds} citationNumbers={citationNumbers} sourceById={sourceById} />
               </small>
             </div>
