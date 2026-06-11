@@ -13,16 +13,16 @@ const colors: Record<string, string> = {
 
 export default function Dashboard({ data }: { data: DashboardData }) {
   const [sourceFilter, setSourceFilter] = useState("all");
-  const visibleSources = useMemo(() => dedupeSources(data.sources), [data.sources]);
+  const topConnections = useMemo(() => dedupeConnections(data.connections).slice(0, 5), [data.connections]);
+  const overviewCitationIds = useMemo(() => splitParagraphs(data.summary?.overview || "").flatMap(extractCitationIds), [data.summary?.overview]);
+  const citedSourceIds = useMemo(() => new Set([...overviewCitationIds, ...topConnections.flatMap(connectionCitationIds)]), [overviewCitationIds, topConnections]);
+  const visibleSources = useMemo(() => dedupeSources(data.sources, citedSourceIds), [data.sources, citedSourceIds]);
   const sourceNames = useMemo(() => Array.from(new Set(visibleSources.map((i) => i.source))).sort(), [visibleSources]);
   const filtered = sourceFilter === "all" ? visibleSources : visibleSources.filter((i) => i.source === sourceFilter);
-  const topConnections = useMemo(() => dedupeConnections(data.connections).slice(0, 5), [data.connections]);
   const sourceById = useMemo(() => new Map(visibleSources.map((source) => [source.id, source])), [visibleSources]);
   const citationNumbers = useMemo(() => {
-    const overviewIds = splitParagraphs(data.summary?.overview || "").flatMap(extractCitationIds);
-    const connectionIds = topConnections.flatMap((item) => connectionCitationIds(item, visibleSources));
-    return new Map(unique([...overviewIds, ...connectionIds]).map((id, index) => [id, index + 1]));
-  }, [data.summary?.overview, topConnections, visibleSources]);
+    return new Map(unique([...overviewCitationIds, ...topConnections.flatMap(connectionCitationIds)]).map((id, index) => [id, index + 1]));
+  }, [overviewCitationIds, topConnections]);
 
   return (
     <div className="pageShell">
@@ -79,7 +79,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                   <h2>Connections</h2>
                 </div>
               </div>
-              <Connections items={topConnections} sources={visibleSources} citationNumbers={citationNumbers} sourceById={sourceById} />
+              <Connections items={topConnections} citationNumbers={citationNumbers} sourceById={sourceById} />
             </section>
           </section>
         </div>
@@ -218,14 +218,14 @@ function SourceFeed({ items, citationNumbers }: { items: SourceItem[]; citationN
   );
 }
 
-function Connections({ items, sources, citationNumbers, sourceById }: { items: ConnectionItem[]; sources: SourceItem[]; citationNumbers: Map<string, number>; sourceById: Map<string, SourceItem> }) {
+function Connections({ items, citationNumbers, sourceById }: { items: ConnectionItem[]; citationNumbers: Map<string, number>; sourceById: Map<string, SourceItem> }) {
   if (!items.length) return <div className="emptyState">No verified connections found for this ticker yet.</div>;
   return (
     <div className="connectionList">
       {items.map((item, index) => {
         const headline = connectionRead(item);
         const body = connectionBody(item, headline);
-        const citationIds = connectionCitationIds(item, sources);
+        const citationIds = connectionCitationIds(item);
         return (
           <article className="connectionCard" key={item.id}>
             <div className="connectionRank">#{index + 1}</div>
@@ -250,14 +250,8 @@ function Connections({ items, sources, citationNumbers, sourceById }: { items: C
   );
 }
 
-function connectionCitationIds(item: ConnectionItem, sources: SourceItem[]) {
-  return unique([resolveSourceRef(item.sourceA, sources), resolveSourceRef(item.sourceB, sources)]);
-}
-
-function resolveSourceRef(value: string, sources: SourceItem[]) {
-  if (sources.some((source) => source.id === value)) return value;
-  const normalized = value.toLowerCase();
-  return sources.find((source) => source.source.toLowerCase() === normalized || label(source.source).toLowerCase() === label(value).toLowerCase())?.id || value;
+function connectionCitationIds(item: ConnectionItem) {
+  return unique(item.itemIds);
 }
 function connectionRead(item: ConnectionItem) {
   return cleanSignal(item.connectionTitle) || cleanSignal(item.title) || firstSentence(cleanSignal(item.narrative)) || cleanSignal(item.stockRelevance);
@@ -328,9 +322,10 @@ function extractCitationIds(value: string) {
 function sourceAnchorId(id: string) {
   return `source-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
-function dedupeSources(items: SourceItem[]) {
+function dedupeSources(items: SourceItem[], pinnedIds = new Set<string>()) {
   const seen = new Set<string>();
   return items.filter((item) => {
+    if (pinnedIds.has(item.id)) return true;
     const key = normalizeForDedupe(`${item.source}:${item.title || item.summary}`);
     if (seen.has(key)) return false;
     seen.add(key);
