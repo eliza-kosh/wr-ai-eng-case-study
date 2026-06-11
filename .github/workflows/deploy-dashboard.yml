@@ -41,9 +41,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          az provider register -n Microsoft.App --wait
-          az provider register -n Microsoft.ContainerRegistry --wait
-          az provider register -n Microsoft.OperationalInsights --wait
+
+          ensure_provider_registered() {
+            local namespace="$1"
+            local state
+            state="$(az provider show -n "$namespace" --query registrationState -o tsv 2>/dev/null || true)"
+            if [ "$state" = "Registered" ]; then
+              echo "$namespace is already registered"
+              return 0
+            fi
+
+            echo "$namespace registration state is '${state:-unknown}'. Attempting registration..."
+            if ! az provider register -n "$namespace" --wait; then
+              echo "::warning::$namespace could not be registered by this identity. If deployment fails, register it once with an Azure Owner or Subscription Contributor account."
+            fi
+          }
+
+          ensure_provider_registered Microsoft.App
+          ensure_provider_registered Microsoft.ContainerRegistry
+          ensure_provider_registered Microsoft.OperationalInsights
 
           if ! az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$ACR_NAME" >/dev/null 2>&1; then
             az acr create \

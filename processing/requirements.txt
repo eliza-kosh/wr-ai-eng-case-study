@@ -1,4 +1,5 @@
 azure-functions
 openai>=1.80.0
+anthropic>=0.50.0
 psycopg[binary]>=3.2.0
 pgvector>=0.3.6

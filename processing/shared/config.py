@@ -17,6 +17,7 @@ class ProcessingConfig:
     connection_confidence_threshold: float = 0.25
     temporal_window_days: int = 90
     max_connection_candidates_per_ticker: int = 5
+    connection_cluster_size: int = 30
     max_agent_searches: int = 5
     enrichment_batch_size: int = 25
     embedding_batch_size: int = 100
@@ -24,6 +25,7 @@ class ProcessingConfig:
     openai_enrichment_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    anthropic_summary_model: str = "claude-opus-4-8"
 
     @classmethod
     def from_env(cls) -> "ProcessingConfig":
@@ -42,6 +44,7 @@ class ProcessingConfig:
             max_connection_candidates_per_ticker=int(
                 os.getenv("PROCESSING_MAX_CONNECTION_CANDIDATES_PER_TICKER", "5")
             ),
+            connection_cluster_size=int(os.getenv("PROCESSING_CONNECTION_CLUSTER_SIZE", "30")),
             max_agent_searches=int(os.getenv("PROCESSING_MAX_AGENT_SEARCHES", "5")),
             enrichment_batch_size=int(os.getenv("PROCESSING_ENRICHMENT_BATCH_SIZE", "25")),
             embedding_batch_size=int(os.getenv("PROCESSING_EMBEDDING_BATCH_SIZE", "100")),
@@ -49,6 +52,7 @@ class ProcessingConfig:
             openai_enrichment_model=os.getenv("OPENAI_ENRICHMENT_MODEL", "gpt-4.1-mini"),
             openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
             embedding_dimensions=int(os.getenv("OPENAI_EMBEDDING_DIMENSIONS", "1536")),
+            anthropic_summary_model=os.getenv("ANTHROPIC_SUMMARY_MODEL", "claude-opus-4-8"),
         )
 
 

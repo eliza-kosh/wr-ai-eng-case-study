@@ -15,6 +15,7 @@ TABLES = (
     "processing_runs",
     "item_enrichments",
     "item_embeddings",
+    "connection_clusters",
     "item_connections",
     "brain_summaries",
     "sentiment_weekly",
@@ -87,7 +88,7 @@ def _ticker_coverage(cur: psycopg.Cursor[Any]) -> list[dict[str, Any]]:
                 select ticker,
                        count(*)::int as connections_total,
                        count(*) filter (where valid = true)::int as valid_connections
-                from item_connections
+                from connection_clusters
                 group by ticker
             ),
             summary_counts as (

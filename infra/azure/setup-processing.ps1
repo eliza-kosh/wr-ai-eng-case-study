@@ -8,8 +8,8 @@ param(
     [string]$KeyVault,
     [Parameter(Mandatory = $true)]
     [SecureString]$OpenAIApiKey,
-    [string]$ProcessingPrepareSchedule = "0 30 1 * * *",
-    [string]$ProcessingSynthesisSchedule = "0 30 2 * * *"
+    [string]$ProcessingPrepareSchedule = "0 0 11 * * *",
+    [string]$ProcessingSynthesisSchedule = "0 30 11 * * *"
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,7 +107,8 @@ $appSettings = @(
     "PROCESSING_CONNECTION_CONFIDENCE_THRESHOLD=0.25",
     "PROCESSING_MAX_AGENT_SEARCHES=5",
     "PROCESSING_TEMPORAL_WINDOW_DAYS=90",
-    "PROCESSING_MAX_CONNECTION_CANDIDATES_PER_TICKER=5"
+    "PROCESSING_MAX_CONNECTION_CANDIDATES_PER_TICKER=2",
+    "PROCESSING_CONNECTION_CLUSTER_SIZE=30"
 )
 
 $subscriptionId = az account show --query id --output tsv

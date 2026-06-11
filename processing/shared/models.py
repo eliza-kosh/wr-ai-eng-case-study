@@ -64,6 +64,30 @@ class ConnectionVerification:
     narrative: str
     stock_relevance: str
     connection_type: ConnectionType
+    supporting_item_ids: tuple[str, ...] = ()
+    rejected_item_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ConnectionClusterItem:
+    source_item_id: str
+    source: str
+    published_at: dt.datetime | None
+    summary: str
+    relevance: int
+    sentiment: Sentiment
+    firsthand: bool
+    similarity: float
+
+
+@dataclass(frozen=True)
+class ConnectionClusterCandidate:
+    cluster_key: str
+    ticker: str
+    anchor_item_id: str
+    average_similarity: float
+    sources: tuple[str, ...]
+    items: tuple[ConnectionClusterItem, ...]
 
 
 def sentiment_to_score(sentiment: str) -> int:

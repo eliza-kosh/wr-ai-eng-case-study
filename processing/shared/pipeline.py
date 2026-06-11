@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from shared.citations import find_invalid_citations
+from shared.citations import extract_cited_item_ids, find_invalid_citations
 from shared.config import ProcessingConfig
 from shared.models import ConnectionCandidate, ConnectionVerification
 from shared.openai_client import OpenAIProcessorClient
@@ -103,18 +103,27 @@ class ProcessingRunner:
         return len(items)
 
     def verify_connections(self, run_id: str) -> dict[str, int]:
-        """Generate cross-source candidates and persist model verification results."""
+        """Generate semantic cluster candidates and persist model verification results."""
         candidate_count = 0
         valid_count = 0
         for ticker in self.store.fetch_tickers_with_embeddings():
-            candidates = self.store.fetch_connection_candidates(ticker)
+            candidates = self.store.fetch_connection_cluster_candidates(ticker)
             candidate_count += len(candidates)
             for candidate in candidates:
-                verification = self._heuristic_connection(candidate)
-                self.store.upsert_connection(
+                try:
+                    verification = self.llm.verify_connection_cluster(candidate)
+                    verification = self._guardrail_cluster_verification(candidate, verification)
+                except Exception:
+                    logging.exception(
+                        "Connection cluster verification failed ticker=%s anchor=%s",
+                        candidate.ticker,
+                        candidate.anchor_item_id,
+                    )
+                    continue
+                self.store.upsert_connection_cluster(
                     candidate,
                     verification,
-                    "heuristic-semantic-connection",
+                    self.config.anthropic_summary_model,
                     run_id,
                 )
                 if (
@@ -123,6 +132,40 @@ class ProcessingRunner:
                 ):
                     valid_count += 1
         return {"connection_candidates": candidate_count, "connections_valid": valid_count}
+
+    def _guardrail_cluster_verification(
+        self,
+        candidate: Any,
+        verification: ConnectionVerification,
+    ) -> ConnectionVerification:
+        """Reject cluster outputs that pass the model but fail basic analyst-quality gates."""
+        if not verification.valid:
+            return verification
+
+        support_ids = set(verification.supporting_item_ids) or {
+            item.source_item_id for item in candidate.items
+        }
+        support_items = [item for item in candidate.items if item.source_item_id in support_ids]
+        sources = {item.source for item in support_items}
+        firsthand_count = sum(1 for item in support_items if item.firsthand)
+        forbidden = ("semantic similarity", "embedding", "retrieved chunk", "alternative-data")
+
+        if (
+            len(support_items) < 3
+            or (len(sources) < 2 and firsthand_count < 5)
+            or any(term in verification.narrative.lower() for term in forbidden)
+        ):
+            return ConnectionVerification(
+                valid=False,
+                confidence=0.0,
+                narrative="",
+                stock_relevance="",
+                connection_type=verification.connection_type,
+                supporting_item_ids=verification.supporting_item_ids,
+                rejected_item_ids=verification.rejected_item_ids,
+            )
+
+        return verification
 
     def generate_brain_summaries(self, run_id: str) -> int:
         """Generate current ticker-level overview summaries."""
@@ -133,7 +176,11 @@ class ProcessingRunner:
                     ticker, self.config.initial_context_per_source
                 )
                 search_log: list[dict[str, Any]] = []
-                payload = self._heuristic_summary(ticker, context)
+                payload = self.llm.generate_summary(ticker, context)
+                cited_ids = self._summary_cited_ids(payload, allowed_ids)
+                if not cited_ids:
+                    cited_ids = self._fallback_cited_ids(context, allowed_ids)
+                payload["cited_item_ids"] = cited_ids
                 invalid = self._invalid_summary_citations(payload, allowed_ids)
                 self.store.insert_brain_summary(
                     ticker=ticker,
@@ -141,7 +188,7 @@ class ProcessingRunner:
                     invalid_citations=invalid,
                     search_log=search_log,
                     run_id=run_id,
-                    model="heuristic-business-overview",
+                    model=self.config.anthropic_summary_model,
                 )
                 count += 1
             except Exception:
@@ -149,21 +196,12 @@ class ProcessingRunner:
         return count
 
     def _heuristic_connection(self, candidate: ConnectionCandidate) -> ConnectionVerification:
-        """Persist broad semantic links without blocking on model verification."""
-        confidence = max(self.config.connection_confidence_threshold, min(0.95, candidate.similarity))
-        narrative = (
-            f"{candidate.source_a} and {candidate.source_b} items discuss semantically similar "
-            f"business context for {candidate.ticker}."
-        )
-        stock_relevance = (
-            "Useful as a cross-source lead for analyst review; validate before treating it as "
-            "a high-conviction signal."
-        )
+        """Reject broad semantic links when model verification is unavailable."""
         return ConnectionVerification(
-            valid=True,
-            confidence=confidence,
-            narrative=narrative,
-            stock_relevance=stock_relevance,
+            valid=False,
+            confidence=0.0,
+            narrative="",
+            stock_relevance="",
             connection_type="corroborating",
         )
 
@@ -176,32 +214,41 @@ class ProcessingRunner:
         items.sort(key=lambda row: (row.get("relevance") or 0), reverse=True)
         top_items = items[:5]
         cited_ids = [str(row["source_item_id"]) for row in top_items if row.get("source_item_id")]
+
+        _sentiment_label = {"bullish": "Bullish", "bearish": "Bearish", "neutral": "Neutral"}
         key_signals = []
         for row in top_items[:3]:
-            source_item_id = row.get("source_item_id")
-            source = row.get("source", "source")
-            sentiment = row.get("sentiment", "neutral")
+            source = row.get("source", "source").replace("_", " ").title()
+            sentiment = str(row.get("sentiment", "neutral")).lower()
+            label = _sentiment_label.get(sentiment, "Neutral")
+            firsthand = " (firsthand)" if row.get("firsthand") else ""
             summary = str(row.get("summary") or "").strip()
-            key_signals.append(f"{source_item_id} reports {source} sentiment is {sentiment}. {summary}")
+            key_signals.append(f"{label} — {source}{firsthand}: {summary}")
 
         if not key_signals:
             key_signals = [f"No enriched business-signal items are available yet for {ticker}."]
 
         connections = context.get("connections", [])
         connection_lines = [
-            f"{row.get('item_a_id')} + {row.get('item_b_id')}: {row.get('narrative')}"
+            (
+                f"[{row.get('source_a', '').replace('_', ' ').upper()} × "
+                f"{row.get('source_b', '').replace('_', ' ').upper()}] "
+                f"{row.get('narrative', '')}"
+            )
             for row in connections[:3]
         ]
         if not connection_lines:
             connection_lines = ["No verified cross-source connections are available yet."]
 
         confidence = "medium" if len(top_items) >= 5 else "low"
+        overview_lines = [f"- {s}" for s in key_signals] if key_signals else ["No data available."]
         return {
-            "headline": f"{ticker} business-signal overview from current alternative-data items",
-            "key_signals": key_signals[:3],
+            "headline": f"{ticker}: insufficient data for a synthesized brief.",
+            "overview": "\n".join(overview_lines),
             "cross_source_connections": connection_lines,
             "bear_case": "Coverage is still partial; treat low-relevance and single-source items as leads.",
             "confidence": confidence,
+            "key_signals": [f"{sid}: (heuristic fallback)" for sid in cited_ids[:10]],
             "cited_item_ids": cited_ids,
         }
 
@@ -209,3 +256,17 @@ class ProcessingRunner:
         cited_ids = set(str(item_id) for item_id in payload.get("cited_item_ids", []))
         body = json.dumps(payload)
         return (cited_ids | find_invalid_citations(body, allowed_ids)) - allowed_ids
+
+    def _summary_cited_ids(self, payload: dict[str, Any], allowed_ids: set[str]) -> list[str]:
+        supplied = {str(item_id) for item_id in payload.get("cited_item_ids", [])}
+        extracted = extract_cited_item_ids(json.dumps(payload))
+        return sorted((supplied | extracted) & allowed_ids)
+
+    def _fallback_cited_ids(self, context: dict[str, Any], allowed_ids: set[str]) -> list[str]:
+        fallback: list[str] = []
+        for connection in context.get("connections", [])[:2]:
+            fallback.extend(str(item_id) for item_id in connection.get("item_ids", []) if item_id)
+        if not fallback:
+            for items in context.get("items_by_source", {}).values():
+                fallback.extend(str(item.get("source_item_id")) for item in items[:3] if item.get("source_item_id"))
+        return [item_id for item_id in dict.fromkeys(fallback) if item_id in allowed_ids][:15]

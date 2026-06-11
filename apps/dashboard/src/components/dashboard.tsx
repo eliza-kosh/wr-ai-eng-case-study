@@ -104,8 +104,10 @@ export default function Dashboard({ data }: { data: DashboardData }) {
 }
 
 function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[] }) {
-  const rawSignals = normalize(data.summary?.keySignals).filter(Boolean).slice(0, 2);
-  const citationIds = unique(rawSignals.flatMap(extractCitationIds));
+  const overviewParagraphs = splitParagraphs(data.summary?.overview || "");
+  const fallbackSignals = normalize(data.summary?.keySignals).filter(Boolean).slice(0, 2);
+  const displayLines = overviewParagraphs.length ? overviewParagraphs : fallbackSignals;
+  const citationIds = unique(displayLines.flatMap(extractCitationIds));
   const citationNumbers = new Map(citationIds.map((id, index) => [id, index + 1]));
   const sourceById = new Map(sources.map((source) => [source.id, source]));
 
@@ -119,8 +121,8 @@ function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[
       </div>
       {data.summary ? (
         <div className="overviewReadout">
-          {rawSignals.length ? (
-            rawSignals.map((signal, index) => {
+          {displayLines.length ? (
+            displayLines.map((signal, index) => {
               const ids = extractCitationIds(signal);
               return (
                 <p key={index}>
@@ -314,6 +316,13 @@ function normalize(value: unknown) {
   if (value && typeof value === "object") return Object.values(value).map(stringify);
   if (typeof value === "string") return [value];
   return [];
+}
+
+function splitParagraphs(value: string) {
+  return value
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 function stringify(value: unknown) {

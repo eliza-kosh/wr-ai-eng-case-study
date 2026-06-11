@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 
-_ITEM_ID_PATTERN = re.compile(r"(?<![A-Za-z0-9_:-])(?:reddit|hacker_news|github|hn_story|hn_comment|reddit_post|reddit_comment):[A-Za-z0-9_:-]+")
+_ITEM_ID_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_:-])"
+    r"(?:reddit|hacker_news|github|hn_story|hn_comment|reddit_post|reddit_comment):[A-Za-z0-9_-]+"
+)
 
 
 def extract_cited_item_ids(text: str) -> set[str]:

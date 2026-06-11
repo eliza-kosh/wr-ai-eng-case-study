@@ -10,7 +10,14 @@ import uuid
 from typing import Any
 
 from shared.config import ProcessingConfig
-from shared.models import ConnectionCandidate, EmbeddedItem, EnrichmentResult, SourceItem
+from shared.models import (
+    ConnectionCandidate,
+    ConnectionClusterCandidate,
+    ConnectionClusterItem,
+    EmbeddedItem,
+    EnrichmentResult,
+    SourceItem,
+)
 
 
 def utc_now() -> dt.datetime:
@@ -111,10 +118,34 @@ class ProcessingStore:
         create index if not exists item_connections_ticker_valid_confidence_idx
             on item_connections(ticker, valid, confidence desc, verified_at desc);
 
+        create table if not exists connection_clusters (
+            cluster_id text primary key,
+            ticker text not null,
+            cluster_key text not null,
+            anchor_item_id text not null references source_items(source_item_id) on delete cascade,
+            item_ids text[] not null default '{{}}',
+            sources text[] not null default '{{}}',
+            average_similarity double precision not null,
+            valid boolean not null,
+            confidence double precision not null,
+            narrative text not null,
+            stock_relevance text not null,
+            connection_type text not null,
+            model text not null,
+            run_id text references processing_runs(run_id),
+            verified_at timestamptz not null default now(),
+            metadata jsonb not null default '{{}}',
+            constraint connection_clusters_key_unique unique (ticker, cluster_key)
+        );
+
+        create index if not exists connection_clusters_ticker_valid_confidence_idx
+            on connection_clusters(ticker, valid, confidence desc, verified_at desc);
+
         create table if not exists brain_summaries (
             summary_id text primary key,
             ticker text not null,
             headline text not null,
+            overview text not null default '',
             key_signals jsonb not null,
             cross_source_connections jsonb not null,
             bear_case text not null,
@@ -146,6 +177,7 @@ class ProcessingStore:
         """
         with self._connect() as conn:
             conn.execute(ddl)
+            conn.execute("alter table brain_summaries add column if not exists overview text not null default ''")
             conn.commit()
 
     def start_run(self) -> str:
@@ -425,6 +457,160 @@ class ProcessingStore:
             for row in rows
         ]
 
+    def fetch_connection_cluster_candidates(self, ticker: str) -> list[ConnectionClusterCandidate]:
+        """Build semantic-neighborhood clusters from high-signal anchor items."""
+        window_seconds = self.config.temporal_window_days * 24 * 60 * 60
+        anchor_sql = """
+        select emb.source_item_id
+        from item_embeddings emb
+        join item_enrichments ie on ie.source_item_id = emb.source_item_id
+        left join connection_clusters existing
+          on existing.ticker = emb.ticker
+         and existing.cluster_key = emb.source_item_id
+        where emb.ticker = %s
+          and existing.cluster_id is null
+          and ie.relevance >= %s
+          and (emb.published_at is null or emb.published_at >= now() - %s * interval '1 second')
+        order by ie.relevance desc, ie.firsthand desc, emb.published_at desc nulls last
+        limit %s
+        """
+        cluster_sql = """
+        with anchor as (
+            select embedding
+            from item_embeddings
+            where source_item_id = %s
+        )
+        select emb.source_item_id, emb.source, emb.published_at, emb.summary,
+               ie.relevance, ie.sentiment, ie.firsthand,
+               1 - (emb.embedding <=> anchor.embedding) as similarity
+        from item_embeddings emb
+        cross join anchor
+        join item_enrichments ie on ie.source_item_id = emb.source_item_id
+        where emb.ticker = %s
+          and ie.relevance >= %s
+          and (1 - (emb.embedding <=> anchor.embedding)) >= %s
+          and (emb.published_at is null or emb.published_at >= now() - %s * interval '1 second')
+        order by emb.embedding <=> anchor.embedding
+        limit %s
+        """
+        with self._connect() as conn:
+            anchors = conn.execute(
+                anchor_sql,
+                (
+                    ticker,
+                    self.config.relevance_threshold,
+                    window_seconds,
+                    self.config.max_connection_candidates_per_ticker,
+                ),
+            ).fetchall()
+            clusters: list[ConnectionClusterCandidate] = []
+            for anchor in anchors:
+                rows = conn.execute(
+                    cluster_sql,
+                    (
+                        anchor["source_item_id"],
+                        ticker,
+                        self.config.relevance_threshold,
+                        self.config.similarity_threshold,
+                        window_seconds,
+                        self.config.connection_cluster_size,
+                    ),
+                ).fetchall()
+                items = tuple(
+                    ConnectionClusterItem(
+                        source_item_id=row["source_item_id"],
+                        source=row["source"],
+                        published_at=row["published_at"],
+                        summary=row["summary"],
+                        relevance=int(row["relevance"]),
+                        sentiment=row["sentiment"],
+                        firsthand=bool(row["firsthand"]),
+                        similarity=float(row["similarity"]),
+                    )
+                    for row in rows
+                )
+                if len(items) < 3:
+                    continue
+                sources = tuple(sorted({item.source for item in items}))
+                avg_similarity = sum(item.similarity for item in items) / len(items)
+                clusters.append(
+                    ConnectionClusterCandidate(
+                        cluster_key=anchor["source_item_id"],
+                        ticker=ticker,
+                        anchor_item_id=anchor["source_item_id"],
+                        average_similarity=avg_similarity,
+                        sources=sources,
+                        items=items,
+                    )
+                )
+        return clusters
+
+    def upsert_connection_cluster(
+        self,
+        candidate: ConnectionClusterCandidate,
+        verification: Any,
+        model: str,
+        run_id: str,
+    ) -> None:
+        from psycopg.types.json import Jsonb
+
+        candidate_item_ids = [item.source_item_id for item in candidate.items]
+        supporting_item_ids = [
+            item_id for item_id in getattr(verification, "supporting_item_ids", ()) if item_id in candidate_item_ids
+        ]
+        item_ids = supporting_item_ids if verification.valid and supporting_item_ids else candidate_item_ids
+        sources = sorted({item.source for item in candidate.items if item.source_item_id in item_ids})
+        with self._connect() as conn:
+            conn.execute(
+                """
+                insert into connection_clusters (
+                    cluster_id, ticker, cluster_key, anchor_item_id, item_ids, sources,
+                    average_similarity, valid, confidence, narrative, stock_relevance,
+                    connection_type, model, run_id, verified_at, metadata
+                )
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (ticker, cluster_key) do update set
+                    anchor_item_id = excluded.anchor_item_id,
+                    item_ids = excluded.item_ids,
+                    sources = excluded.sources,
+                    average_similarity = excluded.average_similarity,
+                    valid = excluded.valid,
+                    confidence = excluded.confidence,
+                    narrative = excluded.narrative,
+                    stock_relevance = excluded.stock_relevance,
+                    connection_type = excluded.connection_type,
+                    model = excluded.model,
+                    run_id = excluded.run_id,
+                    verified_at = excluded.verified_at,
+                    metadata = excluded.metadata
+                """,
+                (
+                    f"cluster-{uuid.uuid4().hex}",
+                    candidate.ticker,
+                    candidate.cluster_key,
+                    candidate.anchor_item_id,
+                    item_ids,
+                    sources,
+                    candidate.average_similarity,
+                    verification.valid,
+                    verification.confidence,
+                    verification.narrative,
+                    verification.stock_relevance,
+                    verification.connection_type,
+                    model,
+                    run_id,
+                    utc_now(),
+                    Jsonb(
+                        {
+                            "candidate": _jsonable_cluster_candidate(candidate),
+                            "supporting_item_ids": supporting_item_ids,
+                            "rejected_item_ids": list(getattr(verification, "rejected_item_ids", ())),
+                        }
+                    ),
+                ),
+            )
+            conn.commit()
+
     def upsert_connection(self, candidate: ConnectionCandidate, verification: Any, model: str, run_id: str) -> None:
         from psycopg.types.json import Jsonb
 
@@ -473,7 +659,7 @@ class ProcessingStore:
     def prune_connections_outside_window(self) -> int:
         """Remove stored connections whose linked items fall outside the active lookback."""
         window_seconds = self.config.temporal_window_days * 24 * 60 * 60
-        sql = """
+        pair_sql = """
         delete from item_connections ic
         using item_embeddings ea, item_embeddings eb
         where ea.source_item_id = ic.item_a_id
@@ -488,10 +674,20 @@ class ProcessingStore:
               )
           )
         """
+        cluster_sql = """
+        delete from connection_clusters cc
+        where not exists (
+            select 1
+            from item_embeddings emb
+            where emb.source_item_id = any(cc.item_ids)
+              and (emb.published_at is null or emb.published_at >= now() - %s * interval '1 second')
+        )
+        """
         with self._connect() as conn:
-            result = conn.execute(sql, (window_seconds, window_seconds, window_seconds))
+            pair_result = conn.execute(pair_sql, (window_seconds, window_seconds, window_seconds))
+            cluster_result = conn.execute(cluster_sql, (window_seconds,))
             conn.commit()
-            return result.rowcount or 0
+            return (pair_result.rowcount or 0) + (cluster_result.rowcount or 0)
 
     def fetch_initial_summary_context(self, ticker: str, per_source: int) -> tuple[dict[str, Any], set[str]]:
         context: dict[str, Any] = {"items_by_source": {}, "connections": []}
@@ -514,25 +710,26 @@ class ProcessingStore:
                 ).fetchall()
                 context["items_by_source"][source] = [dict(row) for row in rows]
                 allowed_ids.update(row["source_item_id"] for row in rows)
-            connections = conn.execute(
+            clusters = conn.execute(
                 """
-                select ic.item_a_id, ic.item_b_id, ic.source_a, ic.source_b, ic.confidence,
-                       ic.narrative, ic.stock_relevance, ic.connection_type
-                from item_connections ic
-                join item_embeddings ea on ea.source_item_id = ic.item_a_id
-                join item_embeddings eb on eb.source_item_id = ic.item_b_id
-                where ic.ticker = %s and ic.valid = true and ic.confidence >= %s
-                  and (ea.published_at is null or ea.published_at >= now() - %s * interval '1 second')
-                  and (eb.published_at is null or eb.published_at >= now() - %s * interval '1 second')
-                order by ic.confidence desc, ic.verified_at desc
+                select cc.cluster_id, cc.anchor_item_id, cc.item_ids, cc.sources, cc.confidence,
+                       cc.average_similarity, cc.narrative, cc.stock_relevance, cc.connection_type
+                from connection_clusters cc
+                where cc.ticker = %s and cc.valid = true and cc.confidence >= %s
+                  and exists (
+                      select 1
+                      from item_embeddings emb
+                      where emb.source_item_id = any(cc.item_ids)
+                        and (emb.published_at is null or emb.published_at >= now() - %s * interval '1 second')
+                  )
+                order by cc.confidence desc, cc.verified_at desc
                 limit 25
                 """,
-                (ticker, self.config.connection_confidence_threshold, window_seconds, window_seconds),
+                (ticker, self.config.connection_confidence_threshold, window_seconds),
             ).fetchall()
-        context["connections"] = [dict(row) for row in connections]
-        for row in connections:
-            allowed_ids.add(row["item_a_id"])
-            allowed_ids.add(row["item_b_id"])
+        context["connections"] = [dict(row) for row in clusters]
+        for row in clusters:
+            allowed_ids.update(row["item_ids"] or [])
         return context, allowed_ids
 
     def semantic_search(self, ticker: str, query_embedding: list[float], limit: int = 10) -> list[dict[str, Any]]:
@@ -567,20 +764,21 @@ class ProcessingStore:
             conn.execute(
                 """
                 insert into brain_summaries (
-                    summary_id, ticker, headline, key_signals, cross_source_connections,
+                    summary_id, ticker, headline, overview, key_signals, cross_source_connections,
                     bear_case, confidence, cited_item_ids, invalid_citation_ids,
                     search_log, model, run_id, generated_at
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     f"summary-{ticker}-{uuid.uuid4().hex[:12]}",
                     ticker,
                     payload["headline"],
-                    Jsonb(payload["key_signals"]),
-                    Jsonb(payload["cross_source_connections"]),
-                    payload["bear_case"],
-                    payload["confidence"],
+                    payload.get("overview", ""),
+                    Jsonb(_json_list(payload.get("key_signals", []))),
+                    Jsonb(_json_list(payload.get("cross_source_connections", []))),
+                    payload.get("bear_case", ""),
+                    payload.get("confidence", "low"),
                     list(payload.get("cited_item_ids", [])),
                     list(invalid_citations),
                     Jsonb(search_log),
@@ -669,3 +867,24 @@ def _vector_literal(values: list[float]) -> str:
 
 def _jsonable_candidate(candidate: ConnectionCandidate) -> dict[str, Any]:
     return json.loads(json.dumps(candidate.__dict__, default=str))
+
+
+def _jsonable_cluster_candidate(candidate: ConnectionClusterCandidate) -> dict[str, Any]:
+    return {
+        "cluster_key": candidate.cluster_key,
+        "ticker": candidate.ticker,
+        "anchor_item_id": candidate.anchor_item_id,
+        "average_similarity": candidate.average_similarity,
+        "sources": list(candidate.sources),
+        "items": [json.loads(json.dumps(item.__dict__, default=str)) for item in candidate.items],
+    }
+
+
+def _json_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]

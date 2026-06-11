@@ -28,7 +28,7 @@ export type ConnectionItem = {
 
 export type SentimentPoint = { source: string; weekStart: string; itemCount: number; sentimentAvg: number; alert: boolean };
 export type PipelineStatus = { dataloadRuns: number; successfulDataloadRuns: number; sourceItems: number; enrichments: number; embeddings: number; connections: number; summaries: number; sentimentRows: number; latestRunAt: string | null };
-export type BrainSummary = { headline: string; confidence: string; bearCase: string; keySignals: unknown; crossSourceConnections: unknown; citedItemIds: string[]; generatedAt: string };
+export type BrainSummary = { headline: string; overview: string; confidence: string; bearCase: string; keySignals: unknown; crossSourceConnections: unknown; citedItemIds: string[]; generatedAt: string };
 export type DashboardData = { ticker: string; tickers: string[]; error: string | null; summary: BrainSummary | null; sources: SourceItem[]; connections: ConnectionItem[]; sentiment: SentimentPoint[]; pipeline: PipelineStatus };
 
 let pool: Pool | null = null;
@@ -67,13 +67,13 @@ async function getTickers() {
 }
 
 async function getSummary(ticker: string) {
-  const rows = await query<{ headline: string; confidence: string; bear_case: string; key_signals: unknown; cross_source_connections: unknown; cited_item_ids: string[] | null; generated_at: Date }>(
-    `select headline,confidence,bear_case,key_signals,cross_source_connections,cited_item_ids,generated_at from brain_summaries where ticker=$1 order by generated_at desc limit 1`,
+  const rows = await query<{ headline: string; overview: string | null; confidence: string; bear_case: string; key_signals: unknown; cross_source_connections: unknown; cited_item_ids: string[] | null; generated_at: Date }>(
+    `select headline,coalesce(overview,'') as overview,confidence,bear_case,key_signals,cross_source_connections,cited_item_ids,generated_at from brain_summaries where ticker=$1 order by generated_at desc limit 1`,
     [ticker],
   );
   const r = rows[0];
   return r
-    ? { headline: r.headline, confidence: r.confidence, bearCase: r.bear_case, keySignals: r.key_signals, crossSourceConnections: r.cross_source_connections, citedItemIds: r.cited_item_ids || [], generatedAt: r.generated_at.toISOString() }
+    ? { headline: r.headline, overview: r.overview || "", confidence: r.confidence, bearCase: r.bear_case, keySignals: r.key_signals, crossSourceConnections: r.cross_source_connections, citedItemIds: r.cited_item_ids || [], generatedAt: r.generated_at.toISOString() }
     : null;
 }
 
@@ -87,7 +87,7 @@ async function getSources(ticker: string): Promise<SourceItem[]> {
 
 async function getConnections(ticker: string): Promise<ConnectionItem[]> {
   const rows = await query<{ connection_id: string; source_a: string; source_b: string; source_a_text: string | null; source_b_text: string | null; confidence: number; narrative: string; stock_relevance: string; connection_type: string }>(
-    `select ic.connection_id,ic.source_a,ic.source_b,coalesce(nullif(ae.summary,''),nullif(left(a.body,220),''),nullif(a.title,'')) as source_a_text,coalesce(nullif(be.summary,''),nullif(left(b.body,220),''),nullif(b.title,'')) as source_b_text,ic.confidence,ic.narrative,ic.stock_relevance,ic.connection_type from item_connections ic left join source_items a on a.source_item_id=ic.source_a left join source_items b on b.source_item_id=ic.source_b left join item_enrichments ae on ae.source_item_id=ic.source_a left join item_enrichments be on be.source_item_id=ic.source_b where ic.ticker=$1 and ic.valid=true order by ic.confidence desc,ic.verified_at desc limit 24`,
+    `select cc.cluster_id as connection_id,array_to_string(cc.sources,' + ') as source_a,'' as source_b,string_agg(coalesce(nullif(ie.summary,''),nullif(left(si.body,220),''),nullif(si.title,'')), E'\\n\\n' order by ie.relevance desc nulls last) filter (where si.source_item_id = any(cc.item_ids[1:3])) as source_a_text,null::text as source_b_text,cc.confidence,cc.narrative,cc.stock_relevance,cc.connection_type from connection_clusters cc left join source_items si on si.source_item_id = any(cc.item_ids) left join item_enrichments ie on ie.source_item_id=si.source_item_id where cc.ticker=$1 and cc.valid=true group by cc.cluster_id,cc.sources,cc.confidence,cc.narrative,cc.stock_relevance,cc.connection_type,cc.verified_at order by cc.confidence desc,cc.verified_at desc limit 24`,
     [ticker],
   );
   return rows.map((r) => ({ id: r.connection_id, sourceA: r.source_a, sourceB: r.source_b, sourceAText: r.source_a_text, sourceBText: r.source_b_text, confidence: Number(r.confidence), narrative: r.narrative, stockRelevance: r.stock_relevance, connectionType: r.connection_type }));
@@ -99,7 +99,7 @@ async function getSentiment(ticker: string): Promise<SentimentPoint[]> {
 }
 
 async function getPipeline(): Promise<PipelineStatus> {
-  const rows = await query<PipelineStatus>(`select (select count(*)::int from dataload_runs) as "dataloadRuns",(select count(*)::int from dataload_runs where status='success') as "successfulDataloadRuns",(select count(*)::int from source_items) as "sourceItems",(select count(*)::int from item_enrichments) as "enrichments",(select count(*)::int from item_embeddings) as "embeddings",(select count(*)::int from item_connections where valid=true) as "connections",(select count(*)::int from brain_summaries) as "summaries",(select count(*)::int from sentiment_weekly) as "sentimentRows",greatest((select max(completed_at) from dataload_runs),(select max(enriched_at) from item_enrichments),(select max(generated_at) from brain_summaries),(select max(refreshed_at) from sentiment_weekly)) as "latestRunAt"`);
+  const rows = await query<PipelineStatus>(`select (select count(*)::int from dataload_runs) as "dataloadRuns",(select count(*)::int from dataload_runs where status='success') as "successfulDataloadRuns",(select count(*)::int from source_items) as "sourceItems",(select count(*)::int from item_enrichments) as "enrichments",(select count(*)::int from item_embeddings) as "embeddings",(select count(*)::int from connection_clusters where valid=true) as "connections",(select count(*)::int from brain_summaries) as "summaries",(select count(*)::int from sentiment_weekly) as "sentimentRows",greatest((select max(completed_at) from dataload_runs),(select max(enriched_at) from item_enrichments),(select max(generated_at) from brain_summaries),(select max(refreshed_at) from sentiment_weekly)) as "latestRunAt"`);
   return rows[0] || emptyPipeline();
 }
 

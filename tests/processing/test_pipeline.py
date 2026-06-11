@@ -8,7 +8,14 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "processing"))
 
 from shared.config import ProcessingConfig
-from shared.models import ConnectionCandidate, ConnectionVerification, EmbeddedItem, EnrichmentResult, SourceItem
+from shared.models import (
+    ConnectionClusterCandidate,
+    ConnectionClusterItem,
+    ConnectionVerification,
+    EmbeddedItem,
+    EnrichmentResult,
+    SourceItem,
+)
 from shared.pipeline import ProcessingRunner
 
 
@@ -58,27 +65,43 @@ class FakeStore:
 
     def prune_connections_outside_window(self) -> int: return 0
 
-    def fetch_connection_candidates(self, ticker: str) -> list[ConnectionCandidate]:
+    def fetch_connection_cluster_candidates(self, ticker: str) -> list[ConnectionClusterCandidate]:
         return [
-            ConnectionCandidate(
-                item_a_id="reddit:item1",
-                item_b_id="github:item2",
+            ConnectionClusterCandidate(
+                cluster_key="reddit:item1",
                 ticker="AMD",
-                source_a="reddit",
-                source_b="github",
-                published_a=None,
-                published_b=None,
-                summary_a="Support worsened.",
-                summary_b="Bug backlog grew.",
-                similarity=0.81,
+                anchor_item_id="reddit:item1",
+                average_similarity=0.82,
+                sources=("github", "reddit"),
+                items=(
+                    ConnectionClusterItem("reddit:item1", "reddit", None, "Support worsened.", 8, "bearish", True, 1.0),
+                    ConnectionClusterItem("github:item2", "github", None, "Bug backlog grew.", 7, "bearish", True, 0.82),
+                    ConnectionClusterItem("github:item3", "github", None, "Support bug is still open.", 6, "bearish", False, 0.79),
+                ),
             )
         ] if not self.connections else []
 
-    def upsert_connection(self, candidate: ConnectionCandidate, verification: ConnectionVerification, model: str, run_id: str) -> None:
+    def upsert_connection_cluster(self, candidate: ConnectionClusterCandidate, verification: ConnectionVerification, model: str, run_id: str) -> None:
         self.connections.append(verification)
 
     def fetch_initial_summary_context(self, ticker: str, per_source: int) -> tuple[dict[str, Any], set[str]]:
-        return ({"items_by_source": {"reddit": [{"source_item_id": "reddit:item1"}]}, "connections": []}, {"reddit:item1"})
+        return (
+            {
+                "items_by_source": {"reddit": [{"source_item_id": "reddit:item1"}]},
+                "connections": [
+                    {
+                        "cluster_id": "cluster:1",
+                        "item_ids": ["reddit:item1", "github:item2"],
+                        "sources": ["reddit", "github"],
+                        "confidence": 0.8,
+                        "narrative": "Support and bugs corroborate disruption.",
+                        "stock_relevance": "Retention risk.",
+                        "connection_type": "corroborating",
+                    }
+                ],
+            },
+            {"reddit:item1", "github:item2"},
+        )
 
     def semantic_search(self, ticker: str, query_embedding: list[float], limit: int = 10) -> list[dict[str, Any]]:
         return [{"source_item_id": "github:item2", "summary": "Bug backlog grew."}]
@@ -99,7 +122,7 @@ class FakeLLM:
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return [[0.1, 0.2, 0.3] for _ in texts]
 
-    def verify_connection(self, candidate: ConnectionCandidate) -> ConnectionVerification:
+    def verify_connection_cluster(self, candidate: ConnectionClusterCandidate) -> ConnectionVerification:
         return ConnectionVerification(True, 0.8, "Support and bugs corroborate disruption.", "Retention risk.", "corroborating")
 
     def propose_search(self, ticker: str, context: dict[str, Any], searches_used: int) -> str | None:
@@ -111,6 +134,7 @@ class FakeLLM:
     def generate_summary(self, ticker: str, context: dict[str, Any]) -> dict[str, Any]:
         return {
             "headline": "AMD support signals weakened.",
+            "overview": "Support delays and bug backlog suggest retention risk.",
             "key_signals": ["reddit:item1 cites slower support."],
             "cross_source_connections": ["github:item2 corroborates backlog."],
             "bear_case": "Thin data.",
