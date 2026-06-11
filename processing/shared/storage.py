@@ -128,6 +128,7 @@ class ProcessingStore:
             average_similarity double precision not null,
             valid boolean not null,
             confidence double precision not null,
+            connection_title text not null default '',
             narrative text not null,
             stock_relevance text not null,
             connection_type text not null,
@@ -140,6 +141,13 @@ class ProcessingStore:
 
         create index if not exists connection_clusters_ticker_valid_confidence_idx
             on connection_clusters(ticker, valid, confidence desc, verified_at desc);
+
+        alter table connection_clusters add column if not exists connection_title text not null default '';
+
+        update connection_clusters
+           set connection_title = coalesce(nullif(split_part(narrative, '.', 1), '') || '.', stock_relevance, '')
+         where connection_title = ''
+           and (narrative <> '' or stock_relevance <> '');
 
         create table if not exists brain_summaries (
             summary_id text primary key,
@@ -565,10 +573,10 @@ class ProcessingStore:
                 """
                 insert into connection_clusters (
                     cluster_id, ticker, cluster_key, anchor_item_id, item_ids, sources,
-                    average_similarity, valid, confidence, narrative, stock_relevance,
-                    connection_type, model, run_id, verified_at, metadata
+                    average_similarity, valid, confidence, connection_title, narrative,
+                    stock_relevance, connection_type, model, run_id, verified_at, metadata
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (ticker, cluster_key) do update set
                     anchor_item_id = excluded.anchor_item_id,
                     item_ids = excluded.item_ids,
@@ -576,6 +584,7 @@ class ProcessingStore:
                     average_similarity = excluded.average_similarity,
                     valid = excluded.valid,
                     confidence = excluded.confidence,
+                    connection_title = excluded.connection_title,
                     narrative = excluded.narrative,
                     stock_relevance = excluded.stock_relevance,
                     connection_type = excluded.connection_type,
@@ -594,6 +603,7 @@ class ProcessingStore:
                     candidate.average_similarity,
                     verification.valid,
                     verification.confidence,
+                    getattr(verification, "connection_title", ""),
                     verification.narrative,
                     verification.stock_relevance,
                     verification.connection_type,
@@ -713,7 +723,8 @@ class ProcessingStore:
             clusters = conn.execute(
                 """
                 select cc.cluster_id, cc.anchor_item_id, cc.item_ids, cc.sources, cc.confidence,
-                       cc.average_similarity, cc.narrative, cc.stock_relevance, cc.connection_type
+                       cc.average_similarity, cc.connection_title, cc.narrative, cc.stock_relevance,
+                       cc.connection_type
                 from connection_clusters cc
                 where cc.ticker = %s and cc.valid = true and cc.confidence >= %s
                   and exists (

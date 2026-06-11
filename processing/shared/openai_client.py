@@ -171,6 +171,7 @@ class OpenAIProcessorClient:
                     connection_type=data.get("connection_type", "corroborating"),
                     supporting_item_ids=tuple(str(item_id) for item_id in data.get("supporting_item_ids", [])),
                     rejected_item_ids=tuple(str(item_id) for item_id in data.get("rejected_item_ids", [])),
+                    connection_title=str(data.get("connection_title", "")),
                 )
         raise ValueError(f"Claude did not return submit_cluster_verification for {candidate.cluster_key}")
 
@@ -462,6 +463,7 @@ def _summary_prompt(ticker: str, context: dict[str, Any]) -> str:
             item_ids = [item_id for item_id in item_ids if item_id]
             parts.append(
                 f"[{source_label}] confidence={conf:.2f} type={conn_type}\n"
+                f"Connection title: {conn.get('connection_title', '').strip()}\n"
                 f"Supporting item IDs: {', '.join(item_ids)}\n"
                 f"Narrative: {conn.get('narrative', '').strip()}\n"
                 f"Stock relevance: {conn.get('stock_relevance', '').strip()}"
@@ -504,6 +506,7 @@ CONNECTION_CLUSTER_TOOL_SCHEMA: dict[str, Any] = {
         "valid": {"type": "boolean"},
         "rejection_reason": {"type": ["string", "null"]},
         "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "connection_title": {"type": "string"},
         "narrative": {"type": "string"},
         "stock_relevance": {"type": "string"},
         "connection_type": {
@@ -523,6 +526,7 @@ CONNECTION_CLUSTER_TOOL_SCHEMA: dict[str, Any] = {
         "valid",
         "rejection_reason",
         "confidence",
+        "connection_title",
         "narrative",
         "stock_relevance",
         "connection_type",
@@ -564,20 +568,22 @@ and together imply a business mechanism.
   - Conflicting chunks expose a useful tension: e.g. production performance is improving while \
 developer reliability remains broken.
 
-NARRATIVE: Write one PM-ready paragraph, 3-5 sentences. The first sentence is the display title, \
-so it must be the synthesized insight that emerges from combining the chunks, not a source-item \
-recap. Bad title: "A developer benchmarks trilinear interpolation with MLPs using ROCm and says \
-RX9700XTX beats a 3080Ti by 30%." That is an input. Good title: "ROCm works for mainstream AI \
-paths but breaks on everything else — progress is real but dangerously narrow." The rest of the \
-paragraph should flow through: what the evidence shows, what else the evidence shows, what the \
-group implies that no single chunk proves, and why that matters for the stock. No bullets, no \
-section labels, no implementation language.
+CONNECTION_TITLE: One sentence, suitable as a table title. It must be the synthesized insight \
+that emerges from combining the chunks, not a source-item recap. Bad title: "A developer \
+benchmarks trilinear interpolation with MLPs using ROCm and says RX9700XTX beats a 3080Ti by \
+30%." That is an input. Good title: "ROCm works for mainstream AI paths but breaks on everything \
+else — progress is real but dangerously narrow."
+
+NARRATIVE: Write one PM-ready paragraph, 3-5 sentences. Start from the connection_title idea, \
+then flow through: what the evidence shows, what else the evidence shows, what the group implies \
+that no single chunk proves, and why that matters for the stock. No bullets, no section labels, \
+no implementation language.
 
 stock_relevance: one sentence with the direct stock mechanism.
 supporting_item_ids: only the item IDs you actually used.
 rejected_item_ids: noisy, duplicate, or tangential item IDs from the input.
 
-When valid=false, set narrative="" and stock_relevance="" and explain the rejection.\
+When valid=false, set connection_title="", narrative="", and stock_relevance="", and explain the rejection.\
 """
 
 

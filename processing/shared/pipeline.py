@@ -154,10 +154,12 @@ class ProcessingRunner:
             len(support_items) < 3
             or (len(sources) < 2 and firsthand_count < 5)
             or any(term in verification.narrative.lower() for term in forbidden)
+            or any(term in verification.connection_title.lower() for term in forbidden)
         ):
             return ConnectionVerification(
                 valid=False,
                 confidence=0.0,
+                connection_title="",
                 narrative="",
                 stock_relevance="",
                 connection_type=verification.connection_type,

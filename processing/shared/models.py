@@ -66,6 +66,7 @@ class ConnectionVerification:
     connection_type: ConnectionType
     supporting_item_ids: tuple[str, ...] = ()
     rejected_item_ids: tuple[str, ...] = ()
+    connection_title: str = ""
 
 
 @dataclass(frozen=True)
