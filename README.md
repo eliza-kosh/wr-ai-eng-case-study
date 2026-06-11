@@ -53,6 +53,8 @@ The processing Function App runs after dataload and reads normalized rows from `
 
 Default cadence is daily at `PROCESSING_PREPARE_SCHEDULE=0 30 1 * * *` and `PROCESSING_SYNTHESIS_SCHEDULE=0 30 2 * * *`. Required runtime secrets are `AZURE_POSTGRES_DSN` and `OPENAI_API_KEY`; model names and thresholds are config-driven in `.env.example`.
 
+Connections and ticker summaries use `PROCESSING_TEMPORAL_WINDOW_DAYS=90`, so overview and connection outputs reflect only the most recent three months of processed items.
+
 Deploy the processing Function App after setup:
 
 ```powershell

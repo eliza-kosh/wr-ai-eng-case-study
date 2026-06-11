@@ -56,6 +56,8 @@ class FakeStore:
 
     def fetch_tickers_with_embeddings(self) -> list[str]: return ["AMD"] if self.embedded else []
 
+    def prune_connections_outside_window(self) -> int: return 0
+
     def fetch_connection_candidates(self, ticker: str) -> list[ConnectionCandidate]:
         return [
             ConnectionCandidate(
@@ -126,6 +128,7 @@ def test_processing_runner_happy_path() -> None:
     assert counts == {
         "enriched": 1,
         "embedded": 1,
+        "connections_pruned": 0,
         "connection_candidates": 1,
         "connections_valid": 1,
         "summaries": 1,

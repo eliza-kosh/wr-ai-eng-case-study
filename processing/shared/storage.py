@@ -159,6 +159,7 @@ class ProcessingStore:
                 "relevance": self.config.relevance_threshold,
                 "similarity": self.config.similarity_threshold,
                 "connection_confidence": self.config.connection_confidence_threshold,
+                "temporal_window_days": self.config.temporal_window_days,
             },
         }
         with self._connect() as conn:
@@ -468,6 +469,29 @@ class ProcessingStore:
                 ),
             )
             conn.commit()
+
+    def prune_connections_outside_window(self) -> int:
+        """Remove stored connections whose linked items fall outside the active lookback."""
+        window_seconds = self.config.temporal_window_days * 24 * 60 * 60
+        sql = """
+        delete from item_connections ic
+        using item_embeddings ea, item_embeddings eb
+        where ea.source_item_id = ic.item_a_id
+          and eb.source_item_id = ic.item_b_id
+          and (
+              (ea.published_at is not null and ea.published_at < now() - %s * interval '1 second')
+              or (eb.published_at is not null and eb.published_at < now() - %s * interval '1 second')
+              or (
+                  ea.published_at is not null
+                  and eb.published_at is not null
+                  and abs(extract(epoch from (ea.published_at - eb.published_at))) > %s
+              )
+          )
+        """
+        with self._connect() as conn:
+            result = conn.execute(sql, (window_seconds, window_seconds, window_seconds))
+            conn.commit()
+            return result.rowcount or 0
 
     def fetch_initial_summary_context(self, ticker: str, per_source: int) -> tuple[dict[str, Any], set[str]]:
         context: dict[str, Any] = {"items_by_source": {}, "connections": []}

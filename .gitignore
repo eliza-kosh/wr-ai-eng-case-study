@@ -21,6 +21,7 @@ processing/local.settings.json
 processing/.python_packages/
 
 # Local artifacts
+apps/
 notebooks/**/.ipynb_checkpoints/
 notebooks/**/outputs/
 data/

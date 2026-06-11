@@ -60,16 +60,18 @@ class ProcessingRunner:
         self.store.ensure_schema()
         run_id = self.store.start_run()
         counts = {
+            "connections_pruned": 0,
             "connection_candidates": 0,
             "connections_valid": 0,
             "summaries": 0,
             "sentiment_rows": 0,
         }
         try:
-            counts["summaries"] = self.generate_brain_summaries(run_id)
-            counts["sentiment_rows"] = self.store.refresh_sentiment_weekly()
+            counts["connections_pruned"] = self.store.prune_connections_outside_window()
             connection_counts = self.verify_connections(run_id)
             counts.update(connection_counts)
+            counts["summaries"] = self.generate_brain_summaries(run_id)
+            counts["sentiment_rows"] = self.store.refresh_sentiment_weekly()
             self.store.complete_run(run_id, {"job": "synthesis_processing", "counts": counts})
             logging.info("Synthesis processing complete run_id=%s counts=%s", run_id, counts)
             return counts
