@@ -113,12 +113,8 @@ function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[
     <section className="card overviewCard">
       <div className="overviewHeader">
         <div className="sectionHeading">
-          <p>Overview</p>
+          <p>{data.ticker}</p>
           <h2>{data.summary?.headline || `${data.ticker} source intelligence`}</h2>
-        </div>
-        <div className="metricGrid compactMetrics">
-          <Metric label="Ticker" value={data.ticker} />
-          <Metric label="Confidence" value={data.summary?.confidence || "pending"} />
         </div>
       </div>
       {data.summary ? (
@@ -167,15 +163,6 @@ function CitationGroup({ ids, citationNumbers, sourceById }: { ids: string[]; ci
         );
       })}
     </sup>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
   );
 }
 
@@ -372,4 +359,6 @@ function normalizeForDedupe(value: string) {
 function sameText(a: string, b: string) {
   return normalizeForDedupe(a) === normalizeForDedupe(b);
 }
+
+
 
