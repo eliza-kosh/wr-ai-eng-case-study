@@ -166,8 +166,8 @@ class OpenAIProcessorClient:
                 return ConnectionVerification(
                     valid=bool(data["valid"]),
                     confidence=float(data["confidence"]),
-                    narrative=str(data["narrative"]),
-                    stock_relevance=str(data["stock_relevance"]),
+                    narrative=str(data.get("narrative", "")),
+                    stock_relevance=str(data.get("stock_relevance", "")),
                     connection_type=data.get("connection_type", "corroborating"),
                     supporting_item_ids=tuple(str(item_id) for item_id in data.get("supporting_item_ids", [])),
                     rejected_item_ids=tuple(str(item_id) for item_id in data.get("rejected_item_ids", [])),
@@ -572,7 +572,9 @@ CONNECTION_TITLE: One sentence, suitable as a table title. It must be the synthe
 that emerges from combining the chunks, not a source-item recap. Bad title: "A developer \
 benchmarks trilinear interpolation with MLPs using ROCm and says RX9700XTX beats a 3080Ti by \
 30%." That is an input. Good title: "ROCm works for mainstream AI paths but breaks on everything \
-else — progress is real but dangerously narrow."
+else — progress is real but dangerously narrow." Keep it under 22 words. Do not start with \
+"Multiple users," "Several reports," "Across many accounts," "The evidence shows," or any \
+phrase that inventories the sources. Name the business implication or tension directly.
 
 NARRATIVE: Write one PM-ready paragraph, 3-5 sentences. Start from the connection_title idea, \
 then flow through: what the evidence shows, what else the evidence shows, what the group implies \

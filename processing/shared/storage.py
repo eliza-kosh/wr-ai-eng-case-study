@@ -566,14 +566,14 @@ class ProcessingStore:
             return int(
                 conn.execute(
                     """
-                    select count(*)::int
+                    select count(*)::int as count
                     from connection_clusters
                     where ticker = %s
                       and valid = true
                       and confidence >= %s
                     """,
                     (ticker, self.config.connection_confidence_threshold),
-                ).fetchone()[0]
+                ).fetchone()["count"]
             )
 
     def upsert_connection_cluster(
