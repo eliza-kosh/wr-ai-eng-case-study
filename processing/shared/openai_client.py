@@ -564,9 +564,14 @@ and together imply a business mechanism.
   - Conflicting chunks expose a useful tension: e.g. production performance is improving while \
 developer reliability remains broken.
 
-NARRATIVE: Write one PM-ready paragraph, 3-5 sentences. It should flow through: what the evidence \
-shows, what else the evidence shows, what the group implies that no single chunk proves, and why \
-that matters for the stock. No bullets, no section labels, no implementation language.
+NARRATIVE: Write one PM-ready paragraph, 3-5 sentences. The first sentence is the display title, \
+so it must be the synthesized insight that emerges from combining the chunks, not a source-item \
+recap. Bad title: "A developer benchmarks trilinear interpolation with MLPs using ROCm and says \
+RX9700XTX beats a 3080Ti by 30%." That is an input. Good title: "ROCm works for mainstream AI \
+paths but breaks on everything else — progress is real but dangerously narrow." The rest of the \
+paragraph should flow through: what the evidence shows, what else the evidence shows, what the \
+group implies that no single chunk proves, and why that matters for the stock. No bullets, no \
+section labels, no implementation language.
 
 stock_relevance: one sentence with the direct stock mechanism.
 supporting_item_ids: only the item IDs you actually used.

@@ -274,28 +274,29 @@ function resolveSourceRef(value: string, sources: SourceItem[]) {
   return sources.find((source) => source.source.toLowerCase() === normalized || label(source.source).toLowerCase() === label(value).toLowerCase())?.id || value;
 }
 function connectionRead(item: ConnectionItem) {
-  const sourceALabel = label(item.sourceA);
-  const sourceBLabel = label(item.sourceB);
-  const a = summarizeConnectionText(item.sourceAText, sourceALabel);
-  const b = summarizeConnectionText(item.sourceBText, sourceBLabel);
-  if (a && b) return `${sourceALabel}: ${a} / ${sourceBLabel}: ${b}`;
-  if (a || b) return `${a || b}`;
-  return cleanSignal(item.narrative) || item.stockRelevance;
+  const narrative = cleanSignal(item.narrative);
+  const title = firstSentence(narrative);
+  return title || cleanSignal(item.stockRelevance);
 }
 
 function connectionSupport(item: ConnectionItem, headline: string) {
   const narrative = cleanSignal(item.narrative);
+  const body = narrativeRemainder(narrative);
+  if (body && !sameText(body, headline)) return body;
   if (narrative && !sameText(narrative, headline) && !normalizeForDedupe(headline).includes(normalizeForDedupe(narrative))) return narrative;
   const relevance = cleanSignal(item.stockRelevance);
   if (relevance && !sameText(relevance, headline) && !sameText(relevance, narrative)) return relevance;
   return "";
 }
 
-function summarizeConnectionText(value: string | null, sourceLabel: string) {
-  if (!value) return "";
-  const cleaned = cleanSignal(value).replace(/\s+/g, " ").trim();
-  if (!cleaned || cleaned.toLowerCase() === sourceLabel.toLowerCase()) return "";
-  return cleaned.length > 150 ? `${cleaned.slice(0, 147).trim()}...` : cleaned;
+function firstSentence(value: string) {
+  const match = value.match(/^(.+?[.!?])(\s|$)/);
+  return match ? match[1].trim() : value.trim();
+}
+
+function narrativeRemainder(value: string) {
+  const title = firstSentence(value);
+  return value.slice(title.length).trim();
 }
 
 function Sentiment({ rows, sources }: { rows: Record<string, string | number>[]; sources: string[] }) {
