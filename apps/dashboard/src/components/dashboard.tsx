@@ -25,8 +25,9 @@ const colors: Record<string, string> = {
 export default function Dashboard({ data }: { data: DashboardData }) {
   const [view, setView] = useState<"connections" | "sentiment">("connections");
   const [sourceFilter, setSourceFilter] = useState("all");
-  const sourceNames = useMemo(() => Array.from(new Set(data.sources.map((i) => i.source))).sort(), [data.sources]);
-  const filtered = sourceFilter === "all" ? data.sources : data.sources.filter((i) => i.source === sourceFilter);
+  const visibleSources = useMemo(() => dedupeSources(data.sources), [data.sources]);
+  const sourceNames = useMemo(() => Array.from(new Set(visibleSources.map((i) => i.source))).sort(), [visibleSources]);
+  const filtered = sourceFilter === "all" ? visibleSources : visibleSources.filter((i) => i.source === sourceFilter);
   const chartRows = useMemo(() => toChartRows(data.sentiment), [data.sentiment]);
   const sentimentSources = useMemo(() => Array.from(new Set(data.sentiment.map((p) => p.source))).sort(), [data.sentiment]);
 
@@ -54,7 +55,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
       ) : null}
 
       <main className="mainStack">
-        <Overview data={data} />
+        <Overview data={data} sources={visibleSources} />
 
         <div className="workspace">
           <section className="primaryStack">
@@ -66,7 +67,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
                 </div>
                 <div className="filterPills">
                   <button className={sourceFilter === "all" ? "pill active" : "pill"} onClick={() => setSourceFilter("all")}>
-                    All {data.sources.length}
+                    All {visibleSources.length}
                   </button>
                   {sourceNames.map((s) => (
                     <button className={sourceFilter === s ? "pill active" : "pill"} key={s} onClick={() => setSourceFilter(s)}>
@@ -102,8 +103,11 @@ export default function Dashboard({ data }: { data: DashboardData }) {
   );
 }
 
-function Overview({ data }: { data: DashboardData }) {
-  const signals = normalize(data.summary?.keySignals).map(cleanSignal).filter(Boolean).slice(0, 2);
+function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[] }) {
+  const rawSignals = normalize(data.summary?.keySignals).filter(Boolean).slice(0, 2);
+  const citationIds = unique(rawSignals.flatMap(extractCitationIds));
+  const citationNumbers = new Map(citationIds.map((id, index) => [id, index + 1]));
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
 
   return (
     <section className="card overviewCard">
@@ -119,7 +123,19 @@ function Overview({ data }: { data: DashboardData }) {
       </div>
       {data.summary ? (
         <div className="overviewReadout">
-          {signals.length ? signals.map((signal, index) => <p key={index}>{signal}</p>) : <p>Summary synthesis is available, but no key signal notes were stored.</p>}
+          {rawSignals.length ? (
+            rawSignals.map((signal, index) => {
+              const ids = extractCitationIds(signal);
+              return (
+                <p key={index}>
+                  {cleanSignal(signal)}
+                  <CitationGroup ids={ids} citationNumbers={citationNumbers} sourceById={sourceById} />
+                </p>
+              );
+            })
+          ) : (
+            <p>Summary synthesis is available, but no key signal notes were stored.</p>
+          )}
         </div>
       ) : (
         <div className="emptyState">
@@ -128,6 +144,29 @@ function Overview({ data }: { data: DashboardData }) {
         </div>
       )}
     </section>
+  );
+}
+
+function CitationGroup({ ids, citationNumbers, sourceById }: { ids: string[]; citationNumbers: Map<string, number>; sourceById: Map<string, SourceItem> }) {
+  const refs = unique(ids);
+  if (!refs.length) return null;
+  return (
+    <sup className="citationGroup">
+      {refs.map((id) => {
+        const number = citationNumbers.get(id);
+        const source = sourceById.get(id);
+        if (!number) return null;
+        return source?.sourceUrl ? (
+          <a key={id} href={source.sourceUrl} target="_blank" title={source.title || id}>
+            [{number}]
+          </a>
+        ) : (
+          <span key={id} title={source?.title || id}>
+            [{number}]
+          </span>
+        );
+      })}
+    </sup>
   );
 }
 
@@ -172,26 +211,30 @@ function SourceFeed({ items }: { items: SourceItem[] }) {
 }
 
 function Connections({ items }: { items: ConnectionItem[] }) {
-  const topItems = items.slice(0, 5);
+  const topItems = dedupeConnections(items).slice(0, 5);
   if (!topItems.length) return <div className="emptyState">No verified connections found for this ticker yet.</div>;
   return (
     <div className="connectionList">
-      {topItems.map((item, index) => (
-        <article className="connectionCard" key={item.id}>
-          <div className="connectionRank">#{index + 1}</div>
-          <div className="connectionBody">
-            <div className="connectionMeta">
-              <span>{Math.round(item.confidence * 100)}% confidence</span>
-              <span>{label(item.connectionType)}</span>
+      {topItems.map((item, index) => {
+        const headline = connectionRead(item);
+        const support = connectionSupport(item, headline);
+        return (
+          <article className="connectionCard" key={item.id}>
+            <div className="connectionRank">#{index + 1}</div>
+            <div className="connectionBody">
+              <div className="connectionMeta">
+                <span>{Math.round(item.confidence * 100)}% confidence</span>
+                <span>{label(item.connectionType)}</span>
+              </div>
+              <h3>{headline}</h3>
+              {support ? <p>{support}</p> : null}
+              <small>
+                Evidence: {label(item.sourceA)} and {label(item.sourceB)}
+              </small>
             </div>
-            <h3>{connectionRead(item)}</h3>
-            <p>{cleanSignal(item.narrative) || item.stockRelevance}</p>
-            <small>
-              Evidence: {label(item.sourceA)} and {label(item.sourceB)}
-            </small>
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -206,12 +249,21 @@ function connectionRead(item: ConnectionItem) {
   return cleanSignal(item.narrative) || item.stockRelevance;
 }
 
+function connectionSupport(item: ConnectionItem, headline: string) {
+  const narrative = cleanSignal(item.narrative);
+  if (narrative && !sameText(narrative, headline) && !normalizeForDedupe(headline).includes(normalizeForDedupe(narrative))) return narrative;
+  const relevance = cleanSignal(item.stockRelevance);
+  if (relevance && !sameText(relevance, headline) && !sameText(relevance, narrative)) return relevance;
+  return "";
+}
+
 function summarizeConnectionText(value: string | null, sourceLabel: string) {
   if (!value) return "";
   const cleaned = cleanSignal(value).replace(/\s+/g, " ").trim();
   if (!cleaned || cleaned.toLowerCase() === sourceLabel.toLowerCase()) return "";
   return cleaned.length > 150 ? `${cleaned.slice(0, 147).trim()}...` : cleaned;
 }
+
 function Sentiment({ rows, sources }: { rows: Record<string, string | number>[]; sources: string[] }) {
   if (!rows.length) return <div className="emptyState">No weekly sentiment rows found for this ticker yet.</div>;
   return (
@@ -277,9 +329,47 @@ function cleanSignal(value: string) {
   return value
     .replace(/^\s*(?:[a-z_]+:[0-9a-f]{8,}\s*(?:\+\s*)?)+:\s*/i, "")
     .replace(/\b[a-z_]+:[0-9a-f]{8,}\s+reports\s+[a-z_]+\s+sentiment\s+is\s+(bullish|bearish|neutral)\.\s*/gi, "")
+    .replace(/\([\s,]*[a-z_]+:[0-9a-f]{8,}(?:[\s,]+[a-z_]+:[0-9a-f]{8,})*[\s,]*\)/gi, "")
     .replace(/\b[a-z_]+:[0-9a-f]{8,}\b\s*/gi, "")
     .replace(/^\s*(?:\+|:)\s*/, "")
     .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
     .trim();
+}
+
+function extractCitationIds(value: string) {
+  return unique(Array.from(value.matchAll(/\b[a-z_]+:[0-9a-f]{8,}\b/g)).map((match) => match[0]));
+}
+
+function dedupeSources(items: SourceItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = normalizeForDedupe(`${item.source}:${item.title || item.summary}`);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function dedupeConnections(items: ConnectionItem[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = normalizeForDedupe(connectionRead(item));
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function unique<T>(items: T[]) {
+  return Array.from(new Set(items));
+}
+
+function normalizeForDedupe(value: string) {
+  return cleanSignal(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function sameText(a: string, b: string) {
+  return normalizeForDedupe(a) === normalizeForDedupe(b);
 }
 
