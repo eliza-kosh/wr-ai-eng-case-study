@@ -1,4 +1,350 @@
 ﻿"use client";
-import {useMemo,useState} from "react";import {Bar,CartesianGrid,ComposedChart,Legend,Line,ResponsiveContainer,Tooltip,XAxis,YAxis} from "recharts";import {Activity,ArrowRight,ExternalLink,GitBranch,RefreshCw,Search} from "lucide-react";import type{ConnectionItem,DashboardData,SentimentPoint,SourceItem}from"@/lib/db";const colors:Record<string,string>={reddit:"#cf735d",hacker_news:"#b88930",github:"#4d849e",glassdoor:"#8772a5"};
-export default function Dashboard({data}:{data:DashboardData}){const[view,setView]=useState<"connections"|"sentiment">("connections");const[sourceFilter,setSourceFilter]=useState("all");const sourceNames=useMemo(()=>Array.from(new Set(data.sources.map(i=>i.source))).sort(),[data.sources]);const filtered=sourceFilter==="all"?data.sources:data.sources.filter(i=>i.source===sourceFilter);const chartRows=useMemo(()=>toChartRows(data.sentiment),[data.sentiment]);const sentimentSources=useMemo(()=>Array.from(new Set(data.sentiment.map(p=>p.source))).sort(),[data.sentiment]);return <div className="pageShell"><header className="siteHeader"><div><h1>Whale Rock Signal Research</h1><p>Overview, source evidence, cross-source connections, and weekly sentiment from Postgres.</p></div><nav className="tickerNav" aria-label="Ticker">{data.tickers.map(t=><a className={t===data.ticker?"ticker active":"ticker"} href={`/?ticker=${t}`} key={t}>{t}</a>)}</nav></header>{data.error?<section className="notice"><strong>Postgres connection issue</strong><p>{data.error}</p></section>:null}<main className="workspace"><section className="primaryStack"><section className="card overviewCard"><div className="sectionHeading"><p>Overview</p><h2>{data.summary?.headline||`${data.ticker} source intelligence`}</h2></div><div className="metricGrid"><Metric label="Ticker" value={data.ticker}/><Metric label="Confidence" value={data.summary?.confidence||"pending"}/><Metric label="Cited sources" value={`${data.summary?.citedItemIds.length||0}`}/><Metric label="Latest refresh" value={formatDate(data.pipeline.latestRunAt)}/></div><Summary data={data}/></section><section className="card"><div className="sectionTitleRow"><div className="sectionHeading"><p>Sources</p><h2>Ranked source feed</h2></div><div className="filterPills"><button className={sourceFilter==="all"?"pill active":"pill"} onClick={()=>setSourceFilter("all")}>All {data.sources.length}</button>{sourceNames.map(s=><button className={sourceFilter===s?"pill active":"pill"} key={s} onClick={()=>setSourceFilter(s)}>{label(s)}</button>)}</div></div><SourceFeed items={filtered}/></section><section className="card"><div className="sectionTitleRow"><div className="sectionHeading"><p>Connections</p><h2>{view==="connections"?"Verified cross-source links":"Sentiment over time"}</h2></div><div className="segmented"><button className={view==="connections"?"selected":""} onClick={()=>setView("connections")}>Connections</button><button className={view==="sentiment"?"selected":""} onClick={()=>setView("sentiment")}>Sentiment</button></div></div>{view==="connections"?<Connections items={data.connections}/>:<Sentiment rows={chartRows} sources={sentimentSources}/>}</section></section><aside className="pipelineRail" aria-label="Live pipeline"><section className="railCard"><div className="sectionHeading"><p>Live pipeline</p><h2>What is happening</h2></div><Pipeline icon={<RefreshCw size={16}/>} title="Dataload" body={`${data.pipeline.successfulDataloadRuns}/${data.pipeline.dataloadRuns} successful runs`} count={`${data.pipeline.sourceItems.toLocaleString()} source rows`}/><Pipeline icon={<Search size={16}/>} title="Prepare processing" body="Relevance, sentiment, firsthand tags, summaries, and embeddings" count={`${data.pipeline.enrichments.toLocaleString()} enriched / ${data.pipeline.embeddings.toLocaleString()} embedded`}/><Pipeline icon={<GitBranch size={16}/>} title="Connection verification" body="Cross-source candidates checked for stock relevance" count={`${data.pipeline.connections.toLocaleString()} valid links`}/><Pipeline icon={<Activity size={16}/>} title="Synthesis" body="Brain summaries and weekly sentiment refreshed for the dashboard" count={`${data.pipeline.summaries.toLocaleString()} summaries / ${data.pipeline.sentimentRows.toLocaleString()} sentiment rows`}/></section><section className="railCard amberCard"><strong>Current read</strong><p>{data.summary?`${data.ticker} has ${data.sources.length} source rows and ${data.connections.length} verified connections.`:"Run synthesis processing to populate the overview."}</p></section></aside></main></div>}
-function Metric({label,value}:{label:string;value:string}){return <div className="metric"><span>{label}</span><strong>{value}</strong></div>}function Summary({data}:{data:DashboardData}){if(!data.summary)return <div className="emptyState"><strong>No brain summary yet.</strong><p>Run synthesis_processing after enrichment to populate brain_summaries.</p></div>;const signals=normalize(data.summary.keySignals);const links=normalize(data.summary.crossSourceConnections);return <div className="summaryGrid"><article><h3>Key signals</h3>{signals.length?<ul>{signals.map((x,i)=><li key={i}>{x}</li>)}</ul>:<p>No key signals stored.</p>}</article><article><h3>Bear case</h3><p>{data.summary.bearCase}</p></article><article><h3>Cross-source read</h3>{links.length?<ul>{links.map((x,i)=><li key={i}>{x}</li>)}</ul>:<p>No cross-source notes stored.</p>}</article></div>}function SourceFeed({items}:{items:SourceItem[]}){if(!items.length)return <div className="emptyState">No source rows found for this ticker.</div>;return <div className="sourceFeed">{items.map(item=><article className={item.cited?"sourceRow cited":"sourceRow"} key={item.id}><div className="sourceBadge" style={{color:color(item.source)}}><span>{label(item.source)}</span><small>{formatDate(item.publishedAt)}</small></div><div className="sourceCopy"><strong>{item.title||item.id}</strong><p>{item.summary}</p><div className="tagLine"><span className={`sentiment ${item.sentiment}`}>{item.sentiment}</span><span>relevance {item.relevance}</span>{item.firsthand?<span>firsthand {item.firsthandType||""}</span>:null}{item.cited?<span>cited</span>:null}</div></div>{item.sourceUrl?<a className="external" href={item.sourceUrl} target="_blank" aria-label="Open source"><ExternalLink size={16}/></a>:null}</article>)}</div>}function Connections({items}:{items:ConnectionItem[]}){if(!items.length)return <div className="emptyState">No verified connections found for this ticker yet.</div>;return <div className="connectionGrid">{items.map(item=><article className="connectionCard" key={item.id}><div className="connectionTop"><span>{label(item.sourceA)}</span><ArrowRight size={15}/><span>{label(item.sourceB)}</span><strong>{Math.round(item.confidence*100)}%</strong></div><p>{item.narrative}</p><small>{item.connectionType} / {item.stockRelevance}</small></article>)}</div>}function Sentiment({rows,sources}:{rows:Record<string,string|number>[];sources:string[]}){if(!rows.length)return <div className="emptyState">No weekly sentiment rows found for this ticker yet.</div>;return <div className="chartPanel"><ResponsiveContainer width="100%" height={360}><ComposedChart data={rows} margin={{top:16,right:12,left:-16,bottom:0}}><CartesianGrid stroke="var(--border)" vertical={false}/><XAxis dataKey="week" stroke="var(--muted)" tickLine={false} fontSize={12}/><YAxis yAxisId="left" domain={[-1,1]} stroke="var(--muted)" tickLine={false} fontSize={12}/><YAxis yAxisId="right" orientation="right" stroke="var(--muted)" tickLine={false} fontSize={12}/><Tooltip contentStyle={{background:"var(--panel)",border:"1px solid var(--border)",color:"var(--text)"}}/><Legend/><Bar yAxisId="right" dataKey="volume" fill="var(--input)" radius={[4,4,0,0]}/>{sources.map(s=><Line yAxisId="left" key={s} type="monotone" dataKey={s} stroke={color(s)} strokeWidth={2} dot={false}/>)}</ComposedChart></ResponsiveContainer></div>}function Pipeline({icon,title,body,count}:{icon:React.ReactNode;title:string;body:string;count:string}){return <div className="pipelineStep"><div className="pipelineIcon">{icon}</div><div><strong>{title}</strong><p>{body}</p><span>{count}</span></div></div>}function toChartRows(points:SentimentPoint[]){const byWeek=new Map<string,Record<string,string|number>>();points.forEach(p=>{const row=byWeek.get(p.weekStart)||{week:p.weekStart.slice(5),volume:0};row[p.source]=p.sentimentAvg;row.volume=Number(row.volume)+p.itemCount;byWeek.set(p.weekStart,row)});return Array.from(byWeek.values())}function label(source:string){return source.replace(/_/g," ").replace(/\b\w/g,l=>l.toUpperCase())}function color(source:string){return colors[source]||"#256f79"}function formatDate(value:string|null){return value?new Intl.DateTimeFormat("en",{month:"short",day:"numeric",year:"numeric"}).format(new Date(value)):"pending"}function normalize(value:unknown){if(Array.isArray(value))return value.map(stringify);if(value&&typeof value==="object")return Object.values(value).map(stringify);if(typeof value==="string")return[value];return[]}function stringify(value:unknown){if(typeof value==="string")return value;if(value&&typeof value==="object"){const record=value as Record<string,unknown>;return String(record.signal||record.summary||record.narrative||record.text||JSON.stringify(record))}return String(value)}
+
+import { useMemo, useState } from "react";
+import {
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { Activity, ExternalLink, GitBranch, RefreshCw, Search } from "lucide-react";
+import type { ConnectionItem, DashboardData, SentimentPoint, SourceItem } from "@/lib/db";
+
+const colors: Record<string, string> = {
+  reddit: "#cf735d",
+  hacker_news: "#b88930",
+  github: "#4d849e",
+  glassdoor: "#8772a5",
+};
+
+export default function Dashboard({ data }: { data: DashboardData }) {
+  const [view, setView] = useState<"connections" | "sentiment">("connections");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const sourceNames = useMemo(() => Array.from(new Set(data.sources.map((i) => i.source))).sort(), [data.sources]);
+  const filtered = sourceFilter === "all" ? data.sources : data.sources.filter((i) => i.source === sourceFilter);
+  const chartRows = useMemo(() => toChartRows(data.sentiment), [data.sentiment]);
+  const sentimentSources = useMemo(() => Array.from(new Set(data.sentiment.map((p) => p.source))).sort(), [data.sentiment]);
+
+  return (
+    <div className="pageShell">
+      <header className="siteHeader">
+        <div>
+          <h1>Whale Rock Signal Research</h1>
+          <p>Overview, source evidence, cross-source connections, and weekly sentiment from Postgres.</p>
+        </div>
+        <nav className="tickerNav" aria-label="Ticker">
+          {data.tickers.map((t) => (
+            <a className={t === data.ticker ? "ticker active" : "ticker"} href={`/?ticker=${t}`} key={t}>
+              {t}
+            </a>
+          ))}
+        </nav>
+      </header>
+
+      {data.error ? (
+        <section className="notice">
+          <strong>Postgres connection issue</strong>
+          <p>{data.error}</p>
+        </section>
+      ) : null}
+
+      <main className="mainStack">
+        <Overview data={data} />
+
+        <div className="workspace">
+          <section className="primaryStack">
+            <section className="card">
+              <div className="sectionTitleRow">
+                <div className="sectionHeading">
+                  <p>Sources</p>
+                  <h2>Ranked source feed</h2>
+                </div>
+                <div className="filterPills">
+                  <button className={sourceFilter === "all" ? "pill active" : "pill"} onClick={() => setSourceFilter("all")}>
+                    All {data.sources.length}
+                  </button>
+                  {sourceNames.map((s) => (
+                    <button className={sourceFilter === s ? "pill active" : "pill"} key={s} onClick={() => setSourceFilter(s)}>
+                      {label(s)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <SourceFeed items={filtered} />
+            </section>
+
+            <SummaryDetails data={data} />
+
+            <section className="card">
+              <div className="sectionTitleRow">
+                <div className="sectionHeading">
+                  <p>{view === "connections" ? "Connections" : "Sentiment"}</p>
+                  <h2>{view === "connections" ? "What is actually happening" : "Sentiment over time"}</h2>
+                </div>
+                <div className="segmented">
+                  <button className={view === "connections" ? "selected" : ""} onClick={() => setView("connections")}>
+                    Connections
+                  </button>
+                  <button className={view === "sentiment" ? "selected" : ""} onClick={() => setView("sentiment")}>
+                    Sentiment
+                  </button>
+                </div>
+              </div>
+              {view === "connections" ? <Connections items={data.connections} /> : <Sentiment rows={chartRows} sources={sentimentSources} />}
+            </section>
+          </section>
+
+          <aside className="pipelineRail" aria-label="Live pipeline">
+            <section className="railCard">
+              <div className="sectionHeading">
+                <p>Live pipeline</p>
+                <h2>What is happening</h2>
+              </div>
+              <Pipeline icon={<RefreshCw size={16} />} title="Dataload" body={`${data.pipeline.successfulDataloadRuns}/${data.pipeline.dataloadRuns} successful runs`} count={`${data.pipeline.sourceItems.toLocaleString()} source rows`} />
+              <Pipeline icon={<Search size={16} />} title="Prepare processing" body="Relevance, sentiment, firsthand tags, summaries, and embeddings" count={`${data.pipeline.enrichments.toLocaleString()} enriched / ${data.pipeline.embeddings.toLocaleString()} embedded`} />
+              <Pipeline icon={<GitBranch size={16} />} title="Connection verification" body="Cross-source candidates checked for stock relevance" count={`${data.pipeline.connections.toLocaleString()} valid links`} />
+              <Pipeline icon={<Activity size={16} />} title="Synthesis" body="Brain summaries and weekly sentiment refreshed for the dashboard" count={`${data.pipeline.summaries.toLocaleString()} summaries / ${data.pipeline.sentimentRows.toLocaleString()} sentiment rows`} />
+            </section>
+            <section className="railCard amberCard">
+              <strong>Current read</strong>
+              <p>{data.summary ? `${data.ticker} has ${data.sources.length} source rows and ${data.connections.length} verified connections.` : "Run synthesis processing to populate the overview."}</p>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function Overview({ data }: { data: DashboardData }) {
+  const signals = normalize(data.summary?.keySignals).map(cleanSignal).filter(Boolean).slice(0, 2);
+
+  return (
+    <section className="card overviewCard">
+      <div className="overviewHeader">
+        <div className="sectionHeading">
+          <p>Overview</p>
+          <h2>{data.summary?.headline || `${data.ticker} source intelligence`}</h2>
+        </div>
+        <div className="metricGrid compactMetrics">
+          <Metric label="Ticker" value={data.ticker} />
+          <Metric label="Confidence" value={data.summary?.confidence || "pending"} />
+          <Metric label="Cited sources" value={`${data.summary?.citedItemIds.length || 0}`} />
+          <Metric label="Latest refresh" value={formatDate(data.pipeline.latestRunAt)} />
+        </div>
+      </div>
+      {data.summary ? (
+        <div className="overviewReadout">
+          {signals.length ? signals.map((signal, index) => <p key={index}>{signal}</p>) : <p>Summary synthesis is available, but no key signal notes were stored.</p>}
+        </div>
+      ) : (
+        <div className="emptyState">
+          <strong>No brain summary yet.</strong>
+          <p>Run synthesis_processing after enrichment to populate brain_summaries.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SummaryDetails({ data }: { data: DashboardData }) {
+  if (!data.summary) return null;
+  const signals = normalize(data.summary.keySignals).map(cleanSignal).filter(Boolean);
+  const links = normalize(data.summary.crossSourceConnections).map(cleanSignal).filter(Boolean);
+
+  return (
+    <section className="card detailCard">
+      <div className="sectionHeading">
+        <p>Evidence read</p>
+        <h2>Signals behind the overview</h2>
+      </div>
+      <div className="detailGrid">
+        <article>
+          <h3>Key signals</h3>
+          {signals.length ? <ul>{signals.map((x, i) => <li key={i}>{x}</li>)}</ul> : <p>No key signals stored.</p>}
+        </article>
+        <article>
+          <h3>Bear case</h3>
+          <p>{data.summary.bearCase}</p>
+        </article>
+        <article>
+          <h3>Cross-source read</h3>
+          {links.length ? <ul>{links.map((x, i) => <li key={i}>{x}</li>)}</ul> : <p>No cross-source notes stored.</p>}
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function SourceFeed({ items }: { items: SourceItem[] }) {
+  if (!items.length) return <div className="emptyState">No source rows found for this ticker.</div>;
+  return (
+    <div className="sourceFeed">
+      {items.map((item) => (
+        <article className={item.cited ? "sourceRow cited" : "sourceRow"} key={item.id}>
+          <div className="sourceBadge" style={{ color: color(item.source) }}>
+            <span>{label(item.source)}</span>
+            <small>{formatDate(item.publishedAt)}</small>
+          </div>
+          <div className="sourceCopy">
+            <strong>{item.title || `${label(item.source)} source item`}</strong>
+            <p>{item.summary}</p>
+            <div className="tagLine">
+              <span className={`sentiment ${item.sentiment}`}>{item.sentiment}</span>
+              <span>relevance {item.relevance}</span>
+              {item.firsthand ? <span>firsthand {item.firsthandType || ""}</span> : null}
+              {item.cited ? <span>cited</span> : null}
+            </div>
+          </div>
+          {item.sourceUrl ? (
+            <a className="external" href={item.sourceUrl} target="_blank" aria-label="Open source">
+              <ExternalLink size={16} />
+            </a>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function Connections({ items }: { items: ConnectionItem[] }) {
+  const topItems = items.slice(0, 5);
+  if (!topItems.length) return <div className="emptyState">No verified connections found for this ticker yet.</div>;
+  return (
+    <div className="connectionList">
+      {topItems.map((item, index) => (
+        <article className="connectionCard" key={item.id}>
+          <div className="connectionRank">#{index + 1}</div>
+          <div className="connectionBody">
+            <div className="connectionMeta">
+              <span>{Math.round(item.confidence * 100)}% confidence</span>
+              <span>{label(item.connectionType)}</span>
+            </div>
+            <h3>{connectionRead(item)}</h3>
+            <p>{cleanSignal(item.narrative) || item.stockRelevance}</p>
+            <small>
+              Evidence: {label(item.sourceA)} and {label(item.sourceB)}
+            </small>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function connectionRead(item: ConnectionItem) {
+  const sourceALabel = label(item.sourceA);
+  const sourceBLabel = label(item.sourceB);
+  const a = summarizeConnectionText(item.sourceAText, sourceALabel);
+  const b = summarizeConnectionText(item.sourceBText, sourceBLabel);
+  if (a && b) return `${sourceALabel}: ${a} / ${sourceBLabel}: ${b}`;
+  if (a || b) return `${a || b}`;
+  return cleanSignal(item.narrative) || item.stockRelevance;
+}
+
+function summarizeConnectionText(value: string | null, sourceLabel: string) {
+  if (!value) return "";
+  const cleaned = cleanSignal(value).replace(/\s+/g, " ").trim();
+  if (!cleaned || cleaned.toLowerCase() === sourceLabel.toLowerCase()) return "";
+  return cleaned.length > 150 ? `${cleaned.slice(0, 147).trim()}...` : cleaned;
+}
+function Sentiment({ rows, sources }: { rows: Record<string, string | number>[]; sources: string[] }) {
+  if (!rows.length) return <div className="emptyState">No weekly sentiment rows found for this ticker yet.</div>;
+  return (
+    <div className="chartPanel">
+      <ResponsiveContainer width="100%" height={360}>
+        <ComposedChart data={rows} margin={{ top: 16, right: 12, left: -16, bottom: 0 }}>
+          <CartesianGrid stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="week" stroke="var(--muted)" tickLine={false} fontSize={12} />
+          <YAxis yAxisId="left" domain={[-1, 1]} stroke="var(--muted)" tickLine={false} fontSize={12} />
+          <YAxis yAxisId="right" orientation="right" stroke="var(--muted)" tickLine={false} fontSize={12} />
+          <Tooltip contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)" }} />
+          <Legend />
+          <Bar yAxisId="right" dataKey="volume" fill="var(--input)" radius={[4, 4, 0, 0]} />
+          {sources.map((s) => (
+            <Line yAxisId="left" key={s} type="monotone" dataKey={s} stroke={color(s)} strokeWidth={2} dot={false} />
+          ))}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function Pipeline({ icon, title, body, count }: { icon: React.ReactNode; title: string; body: string; count: string }) {
+  return (
+    <div className="pipelineStep">
+      <div className="pipelineIcon">{icon}</div>
+      <div>
+        <strong>{title}</strong>
+        <p>{body}</p>
+        <span>{count}</span>
+      </div>
+    </div>
+  );
+}
+
+function toChartRows(points: SentimentPoint[]) {
+  const byWeek = new Map<string, Record<string, string | number>>();
+  points.forEach((p) => {
+    const row = byWeek.get(p.weekStart) || { week: p.weekStart.slice(5), volume: 0 };
+    row[p.source] = p.sentimentAvg;
+    row.volume = Number(row.volume) + p.itemCount;
+    byWeek.set(p.weekStart, row);
+  });
+  return Array.from(byWeek.values());
+}
+
+function label(source: string) {
+  return source.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+function color(source: string) {
+  return colors[source] || "#256f79";
+}
+
+function formatDate(value: string | null) {
+  return value ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value)) : "pending";
+}
+
+function normalize(value: unknown) {
+  if (Array.isArray(value)) return value.map(stringify);
+  if (value && typeof value === "object") return Object.values(value).map(stringify);
+  if (typeof value === "string") return [value];
+  return [];
+}
+
+function stringify(value: unknown) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return String(record.signal || record.summary || record.narrative || record.text || JSON.stringify(record));
+  }
+  return String(value);
+}
+
+function cleanSignal(value: string) {
+  return value
+    .replace(/^\s*(?:[a-z_]+:[0-9a-f]{8,}\s*(?:\+\s*)?)+:\s*/i, "")
+    .replace(/\b[a-z_]+:[0-9a-f]{8,}\s+reports\s+[a-z_]+\s+sentiment\s+is\s+(bullish|bearish|neutral)\.\s*/gi, "")
+    .replace(/\b[a-z_]+:[0-9a-f]{8,}\b\s*/gi, "")
+    .replace(/^\s*(?:\+|:)\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+
