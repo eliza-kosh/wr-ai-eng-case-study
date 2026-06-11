@@ -4,15 +4,15 @@
 
 ## 1. Source Selection
 
-**Reddit** (Arctic Shift) and **Hacker News** (Algolia) provide unsolicited firsthand developer and operator opinion without a paid contract — migration stories, pricing complaints, and the technical founders who make or influence buy decisions. 
+**Reddit** (Arctic Shift) and **Hacker News** (Algolia) provide unsolicited firsthand developer and operator opinion without a paid contract; migration stories, pricing complaints, and the technical founders who make or influence buy decisions. 
 
 **GitHub** (REST API) adds a structural layer neither community source can: issue velocity, bug severity, and release cadence as a live audit trail of product health. 
 
-**Glassdoor** via Coresignal was planned as a fourth source for employee morale and sales org health; the API was down the entire development window and came back up right after the submission deadline. 
+**Glassdoor** via Coresignal was planned as a fourth source for employee morale and sales org health; the API was down the entire development window and came back up towards the end of the deadline. 
 
 All three live sources share a demographic blind spot: Reddit skews younger and male, HN skews toward SF-area technical founders, and GitHub captures only active contributors. This pipeline reflects what developers think — not enterprise buyers, CFOs, or end users — which limits applicability for tickers where purchase decisions don't live with technical teams.
 
-**Rejected:** X/Twitter (high noise-to-signal ratio that would require significant filtering work to be useful); earnings transcripts and SEC filings (already priced in and covered by existing quant feeds); job postings (meaningful only in longitudinal aggregate, not at the item level this pipeline operates on).
+**Rejected:** X/Twitter (high noise-to-signal ratio that would require significant filtering work to be useful); earnings transcripts and SEC filings (covered by existing quant feeds); job postings (meaningful only in longitudinal aggregate, not at the item level this pipeline operates on).
 
 ---
 
@@ -25,6 +25,7 @@ All three live sources share a demographic blind spot: Reddit skews younger and 
 - **Azure Blob Storage** — raw source API responses archived before any database write, providing a full reprocessing trail independent of the database.
 - **Azure Key Vault** — all secrets accessed by the Function Apps via managed identity. No credentials in app settings or source control.
 - **Application Insights** — one workspace per Function App for telemetry and alerting.
+- **Azure Container Apps** — the dashboard is containerised, pushed to Azure Container Registry on each merge to main, and deployed as a Container App with external ingress. A separate path-filtered GitHub Actions workflow handles this independently of the Function App deployments.
 
 Everything is provisioned via PowerShell scripts against the Azure CLI and deployed through GitHub Actions CI/CD.
 
@@ -92,8 +93,6 @@ Up to 30 enriched items (10 per source, by relevance, within a 90-day lookback) 
 
 The output schema: `headline` (trade idea, not a topic label), `overview` (analyst synthesis across all sources, not a source-by-source recap), `cross_source_connections` (the verified connection narratives), `bear_case` (required even in bullish summaries — what the short thesis would argue), `confidence` (high/medium/low), `key_signals` (each claim in the overview mapped to the source item it came from), and `cited_item_ids` (full citation list for validation).
 
-The system prompt instructs Claude to synthesise across sources rather than summarise each in turn, and requires the bear case to reflect what sell-side coverage is missing or what the signal pattern implies about downside risk.
-
 ---
 
 ## 3. Evaluation
@@ -116,13 +115,11 @@ The system prompt instructs Claude to synthesise across sources rather than summ
 | Brain summary | Claude Opus 4.8 | ~$0.20 |
 | **Total** | | **~$0.40** |
 
-Cold-start (180-day backfill) takes 20–40 minutes per ticker, dominated by enrichment batches. Incremental runs on a 2-hour window complete in under 2 minutes. The main cost bottleneck is Claude Opus at synthesis time — switching connection verification to Haiku with an Opus pass only for high-confidence candidates would cut cost by ~40%.
-
 **Infrastructure cost** is minimal at this scale — Consumption Plan Function Apps (pay-per-execution) and a Postgres instance put fixed Azure spend well under $20/month.
 
 **Data cost:** Reddit (Arctic Shift), HN (Algolia), and GitHub are all free. Coresignal, the planned Glassdoor provider, has a base subscription of $50/month — an account was registered and the integration scaffolded, but the API outage described in Section 1 meant it never contributed data. That $50/month would be the largest fixed data cost in a working deployment, exceeding Azure infrastructure spend entirely.
 
-**Development tooling:** The project was developed using OpenAI Codex CLI rather than Claude Code (for cost reasons)
+**Development tooling:** The project was developed using OpenAI Codex CLI rather than Claude Code (for cost saving reasons).
 
 ---
 
