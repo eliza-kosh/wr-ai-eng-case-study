@@ -508,10 +508,11 @@ class ProcessingStore:
                     ticker,
                     self.config.relevance_threshold,
                     window_seconds,
-                    self.config.max_connection_candidates_per_ticker,
+                    self.config.max_connection_candidates_per_ticker * 4,
                 ),
             ).fetchall()
             clusters: list[ConnectionClusterCandidate] = []
+            selected_item_sets: list[set[str]] = []
             for anchor in anchors:
                 rows = conn.execute(
                     cluster_sql,
@@ -539,6 +540,9 @@ class ProcessingStore:
                 )
                 if len(items) < 3:
                     continue
+                item_set = {item.source_item_id for item in items}
+                if any(_jaccard_overlap(item_set, selected) > self.config.connection_cluster_max_overlap for selected in selected_item_sets):
+                    continue
                 sources = tuple(sorted({item.source for item in items}))
                 avg_similarity = sum(item.similarity for item in items) / len(items)
                 clusters.append(
@@ -551,6 +555,9 @@ class ProcessingStore:
                         items=items,
                     )
                 )
+                selected_item_sets.append(item_set)
+                if len(clusters) >= self.config.max_connection_candidates_per_ticker:
+                    break
         return clusters
 
     def upsert_connection_cluster(
@@ -874,6 +881,12 @@ def _source_item(row: dict[str, Any]) -> SourceItem:
 
 def _vector_literal(values: list[float]) -> str:
     return "[" + ",".join(f"{float(value):.8f}" for value in values) + "]"
+
+
+def _jaccard_overlap(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
 
 
 def _jsonable_candidate(candidate: ConnectionCandidate) -> dict[str, Any]:

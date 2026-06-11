@@ -14,10 +14,11 @@ class ProcessingConfig:
     sources: tuple[str, ...] = ("reddit", "hacker_news", "github")
     relevance_threshold: int = 0
     similarity_threshold: float = 0.0
-    connection_confidence_threshold: float = 0.25
+    connection_confidence_threshold: float = 0.10
     temporal_window_days: int = 90
-    max_connection_candidates_per_ticker: int = 5
+    max_connection_candidates_per_ticker: int = 12
     connection_cluster_size: int = 30
+    connection_cluster_max_overlap: float = 0.65
     max_agent_searches: int = 5
     enrichment_batch_size: int = 25
     embedding_batch_size: int = 100
@@ -38,13 +39,14 @@ class ProcessingConfig:
             relevance_threshold=int(os.getenv("PROCESSING_RELEVANCE_THRESHOLD", "0")),
             similarity_threshold=float(os.getenv("PROCESSING_SIMILARITY_THRESHOLD", "0.0")),
             connection_confidence_threshold=float(
-                os.getenv("PROCESSING_CONNECTION_CONFIDENCE_THRESHOLD", "0.25")
+                os.getenv("PROCESSING_CONNECTION_CONFIDENCE_THRESHOLD", "0.10")
             ),
             temporal_window_days=int(os.getenv("PROCESSING_TEMPORAL_WINDOW_DAYS", "90")),
             max_connection_candidates_per_ticker=int(
-                os.getenv("PROCESSING_MAX_CONNECTION_CANDIDATES_PER_TICKER", "5")
+                os.getenv("PROCESSING_MAX_CONNECTION_CANDIDATES_PER_TICKER", "12")
             ),
             connection_cluster_size=int(os.getenv("PROCESSING_CONNECTION_CLUSTER_SIZE", "30")),
+            connection_cluster_max_overlap=float(os.getenv("PROCESSING_CONNECTION_CLUSTER_MAX_OVERLAP", "0.65")),
             max_agent_searches=int(os.getenv("PROCESSING_MAX_AGENT_SEARCHES", "5")),
             enrichment_batch_size=int(os.getenv("PROCESSING_ENRICHMENT_BATCH_SIZE", "25")),
             embedding_batch_size=int(os.getenv("PROCESSING_EMBEDDING_BATCH_SIZE", "100")),
