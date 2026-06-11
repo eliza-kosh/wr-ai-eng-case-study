@@ -1,4 +1,15 @@
-﻿import { getDashboardData } from "@/lib/db";
-import Dashboard from "@/components/dashboard";
+﻿import Dashboard from "../components/dashboard";
+import { getDashboardData } from "../lib/db";
+
 export const dynamic = "force-dynamic";
-export default async function Page({ searchParams }: { searchParams?: { ticker?: string } }) { const data = await getDashboardData(searchParams?.ticker); return <Dashboard data={data} />; }
+
+type PageProps = {
+  searchParams?: {
+    ticker?: string;
+  };
+};
+
+export default async function Page({ searchParams }: PageProps) {
+  const data = await getDashboardData(searchParams?.ticker);
+  return <Dashboard data={data} />;
+}
