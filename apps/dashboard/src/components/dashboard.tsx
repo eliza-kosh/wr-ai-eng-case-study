@@ -1,19 +1,8 @@
 ﻿"use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import {
-  Bar,
-  CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { ExternalLink } from "lucide-react";
-import type { ConnectionItem, DashboardData, SentimentPoint, SourceItem } from "@/lib/db";
+import type { ConnectionItem, DashboardData, SourceItem } from "@/lib/db";
 
 const colors: Record<string, string> = {
   reddit: "#cf735d",
@@ -23,7 +12,6 @@ const colors: Record<string, string> = {
 };
 
 export default function Dashboard({ data }: { data: DashboardData }) {
-  const [view, setView] = useState<"connections" | "sentiment">("connections");
   const [sourceFilter, setSourceFilter] = useState("all");
   const visibleSources = useMemo(() => dedupeSources(data.sources), [data.sources]);
   const sourceNames = useMemo(() => Array.from(new Set(visibleSources.map((i) => i.source))).sort(), [visibleSources]);
@@ -35,15 +23,13 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     const connectionIds = topConnections.flatMap((item) => connectionCitationIds(item, visibleSources));
     return new Map(unique([...overviewIds, ...connectionIds]).map((id, index) => [id, index + 1]));
   }, [data.summary?.overview, topConnections, visibleSources]);
-  const chartRows = useMemo(() => toChartRows(data.sentiment), [data.sentiment]);
-  const sentimentSources = useMemo(() => Array.from(new Set(data.sentiment.map((p) => p.source))).sort(), [data.sentiment]);
 
   return (
     <div className="pageShell">
       <header className="siteHeader">
         <div>
           <h1>Whale Rock Signal Research</h1>
-          <p>Overview, source evidence, cross-source connections, and weekly sentiment from Postgres.</p>
+          <p>Overview, source evidence, and cross-source connections from Postgres.</p>
         </div>
         <nav className="tickerNav" aria-label="Ticker">
           {data.tickers.map((t) => (
@@ -89,19 +75,11 @@ export default function Dashboard({ data }: { data: DashboardData }) {
             <section className="card">
               <div className="sectionTitleRow">
                 <div className="sectionHeading">
-                  <p>{view === "connections" ? "Connections" : "Sentiment"}</p>
-                  <h2>{view === "connections" ? "What is actually happening" : "Sentiment over time"}</h2>
-                </div>
-                <div className="segmented">
-                  <button className={view === "connections" ? "selected" : ""} onClick={() => setView("connections")}>
-                    Connections
-                  </button>
-                  <button className={view === "sentiment" ? "selected" : ""} onClick={() => setView("sentiment")}>
-                    Sentiment
-                  </button>
+                  <p>Connections</p>
+                  <h2>What is actually happening</h2>
                 </div>
               </div>
-              {view === "connections" ? <Connections items={topConnections} sources={visibleSources} citationNumbers={citationNumbers} sourceById={sourceById} /> : <Sentiment rows={chartRows} sources={sentimentSources} />}
+              <Connections items={topConnections} sources={visibleSources} citationNumbers={citationNumbers} sourceById={sourceById} />
             </section>
           </section>
         </div>
@@ -170,33 +148,40 @@ function CitationGroup({ ids, citationNumbers, sourceById }: { ids: string[]; ci
 
 function renderInlineCitations(value: string, citationNumbers: Map<string, number>, sourceById: Map<string, SourceItem>) {
   const parts: ReactNode[] = [];
-  const pattern = /\b[a-z_]+:[0-9a-f]{8,}\b/g;
+  const idPattern = /\b[a-z_]+:[0-9a-f]{8,}\b/g;
+  const pattern = /\((?:\s*\b[a-z_]+:[0-9a-f]{8,}\b\s*,?)+\)|\b[a-z_]+:[0-9a-f]{8,}\b/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(value)) !== null) {
-    const id = match[0];
     if (match.index > lastIndex) parts.push(value.slice(lastIndex, match.index));
-    const number = citationNumbers.get(id);
-    const source = sourceById.get(id);
-    parts.push(
-      <sup className="citationGroup" key={`${id}-${match.index}`}>
-        {number ? (
-          source ? (
-            <a href={`#${sourceAnchorId(id)}`} title={source.title || id}>
-              [{number}]
-            </a>
-          ) : (
-            <a href="#sources" title={id}>
-              [{number}]
-            </a>
-          )
-        ) : null}
-      </sup>,
-    );
+    const ids = unique(Array.from(match[0].matchAll(idPattern)).map((idMatch) => idMatch[0]));
+    ids.forEach((id, index) => {
+      if (index > 0) parts.push(" ");
+      parts.push(renderCitation(id, match!.index + index, citationNumbers, sourceById));
+    });
     lastIndex = pattern.lastIndex;
   }
   if (lastIndex < value.length) parts.push(value.slice(lastIndex));
   return parts.length ? parts : cleanSignal(value);
+}
+
+function renderCitation(id: string, key: number, citationNumbers: Map<string, number>, sourceById: Map<string, SourceItem>) {
+  const number = citationNumbers.get(id);
+  const source = sourceById.get(id);
+  if (!number) return null;
+  return (
+    <sup className="citationGroup" key={`${id}-${key}`}>
+      {source ? (
+        <a href={`#${sourceAnchorId(id)}`} title={source.title || id}>
+          [{number}]
+        </a>
+      ) : (
+        <a href="#sources" title={id}>
+          [{number}]
+        </a>
+      )}
+    </sup>
+  );
 }
 
 function SourceFeed({ items, citationNumbers }: { items: SourceItem[]; citationNumbers: Map<string, number> }) {
@@ -216,7 +201,6 @@ function SourceFeed({ items, citationNumbers }: { items: SourceItem[]; citationN
               <strong>{item.title || `${label(item.source)} source item`}</strong>
               <p>{item.summary}</p>
               <div className="tagLine">
-                <span className={`sentiment ${item.sentiment}`}>{item.sentiment}</span>
                 <span>relevance {item.relevance}</span>
                 {item.firsthand ? <span>firsthand {item.firsthandType || ""}</span> : null}
                 {item.cited ? <span>cited</span> : null}
@@ -297,39 +281,6 @@ function firstSentence(value: string) {
 function narrativeRemainder(value: string) {
   const title = firstSentence(value);
   return value.slice(title.length).trim();
-}
-
-function Sentiment({ rows, sources }: { rows: Record<string, string | number>[]; sources: string[] }) {
-  if (!rows.length) return <div className="emptyState">No weekly sentiment rows found for this ticker yet.</div>;
-  return (
-    <div className="chartPanel">
-      <ResponsiveContainer width="100%" height={360}>
-        <ComposedChart data={rows} margin={{ top: 16, right: 12, left: -16, bottom: 0 }}>
-          <CartesianGrid stroke="var(--border)" vertical={false} />
-          <XAxis dataKey="week" stroke="var(--muted)" tickLine={false} fontSize={12} />
-          <YAxis yAxisId="left" domain={[-1, 1]} stroke="var(--muted)" tickLine={false} fontSize={12} />
-          <YAxis yAxisId="right" orientation="right" stroke="var(--muted)" tickLine={false} fontSize={12} />
-          <Tooltip contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--text)" }} />
-          <Legend />
-          <Bar yAxisId="right" dataKey="volume" fill="var(--input)" radius={[4, 4, 0, 0]} />
-          {sources.map((s) => (
-            <Line yAxisId="left" key={s} type="monotone" dataKey={s} stroke={color(s)} strokeWidth={2} dot={false} />
-          ))}
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-function toChartRows(points: SentimentPoint[]) {
-  const byWeek = new Map<string, Record<string, string | number>>();
-  points.forEach((p) => {
-    const row = byWeek.get(p.weekStart) || { week: p.weekStart.slice(5), volume: 0 };
-    row[p.source] = p.sentimentAvg;
-    row.volume = Number(row.volume) + p.itemCount;
-    byWeek.set(p.weekStart, row);
-  });
-  return Array.from(byWeek.values());
 }
 
 function label(source: string) {
