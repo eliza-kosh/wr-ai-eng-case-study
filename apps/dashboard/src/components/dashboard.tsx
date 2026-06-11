@@ -114,7 +114,8 @@ function Overview({ data }: { data: DashboardData }) {
         </div>
         <div className="metricGrid compactMetrics">
           <Metric label="Ticker" value={data.ticker} />
-          <Metric label="Confidence" value={data.summary?.confidence || "pending"} />`n        </div>
+          <Metric label="Confidence" value={data.summary?.confidence || "pending"} />
+        </div>
       </div>
       {data.summary ? (
         <div className="overviewReadout">
@@ -281,8 +282,4 @@ function cleanSignal(value: string) {
     .replace(/\s+/g, " ")
     .trim();
 }
-
-
-
-
 
