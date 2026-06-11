@@ -62,23 +62,15 @@ jobs:
           ensure_provider_registered Microsoft.OperationalInsights
 
           if ! az acr show --resource-group "$AZURE_RESOURCE_GROUP" --name "$ACR_NAME" >/dev/null 2>&1; then
-            az acr create \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$ACR_NAME" \
-              --sku Basic \
-              --admin-enabled true \
-              --location "$AZURE_LOCATION"
+            echo "::warning::Could not verify ACR $ACR_NAME with this identity. Assuming it is pre-created."
           fi
 
-          if ! az acr update --name "$ACR_NAME" --admin-enabled true >/dev/null; then
+          if ! az acr update --name "$ACR_NAME" --admin-enabled true >/dev/null 2>&1; then
             echo "::warning::Could not update ACR admin-enabled setting with this identity. Continuing with existing registry configuration."
           fi
 
           if ! az containerapp env show --resource-group "$AZURE_RESOURCE_GROUP" --name "$CONTAINER_APP_ENV" >/dev/null 2>&1; then
-            az containerapp env create \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$CONTAINER_APP_ENV" \
-              --location "$AZURE_LOCATION"
+            echo "::warning::Could not verify Container Apps environment $CONTAINER_APP_ENV with this identity. Assuming it is pre-created."
           fi
 
       - name: Build and push image
