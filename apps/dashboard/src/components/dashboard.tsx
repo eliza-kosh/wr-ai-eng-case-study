@@ -28,7 +28,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
     <div className="pageShell">
       <header className="siteHeader">
         <div>
-          <h1>Whale Rock Signal Research</h1>
+          <h1>Signal Research</h1>
           <p>Overview, source evidence, and cross-source connections from Postgres.</p>
         </div>
         <nav className="tickerNav" aria-label="Ticker">
