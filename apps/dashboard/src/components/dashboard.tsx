@@ -105,9 +105,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
 
 function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[] }) {
   const overviewParagraphs = splitParagraphs(data.summary?.overview || "");
-  const fallbackSignals = normalize(data.summary?.keySignals).filter(Boolean).slice(0, 2);
-  const displayLines = overviewParagraphs.length ? overviewParagraphs : fallbackSignals;
-  const citationIds = unique(displayLines.flatMap(extractCitationIds));
+  const citationIds = unique(overviewParagraphs.flatMap(extractCitationIds));
   const citationNumbers = new Map(citationIds.map((id, index) => [id, index + 1]));
   const sourceById = new Map(sources.map((source) => [source.id, source]));
 
@@ -121,18 +119,18 @@ function Overview({ data, sources }: { data: DashboardData; sources: SourceItem[
       </div>
       {data.summary ? (
         <div className="overviewReadout">
-          {displayLines.length ? (
-            displayLines.map((signal, index) => {
-              const ids = extractCitationIds(signal);
+          {overviewParagraphs.length ? (
+            overviewParagraphs.map((paragraph, index) => {
+              const ids = extractCitationIds(paragraph);
               return (
                 <p key={index}>
-                  {cleanSignal(signal)}
+                  {cleanSignal(paragraph)}
                   <CitationGroup ids={ids} citationNumbers={citationNumbers} sourceById={sourceById} />
                 </p>
               );
             })
           ) : (
-            <p>Summary synthesis is available, but no key signal notes were stored.</p>
+            <p>Summary synthesis is available, but no overview was stored.</p>
           )}
         </div>
       ) : (
