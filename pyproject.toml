@@ -7,10 +7,8 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dashboard = ["streamlit>=1.40", "plotly>=5.24", "pandas>=2.2", "psycopg[binary]>=3.2.0"]
-exploration = ["ipykernel>=6.29", "requests>=2.32"]
 dataload = ["azure-functions>=1.20.0", "azure-storage-blob>=12.20.0", "psycopg[binary]>=3.2.0", "requests>=2.32"]
-processing = ["azure-functions>=1.20.0", "openai>=1.80.0", "anthropic>=0.64.0", "psycopg[binary]>=3.2.0", "pgvector>=0.3.6"]
+processing = ["azure-functions>=1.20.0", "openai>=1.80.0", "psycopg[binary]>=3.2.0", "pgvector>=0.3.6"]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 
 [build-system]
@@ -22,4 +20,4 @@ packages = ["dataload", "processing"]
 
 [tool.ruff]
 line-length = 100
-src = ["dataload", "apps", "processing", "services", "tests"]
+src = ["dataload", "processing", "tests"]

@@ -8,8 +8,6 @@ param(
     [string]$KeyVault,
     [Parameter(Mandatory = $true)]
     [SecureString]$OpenAIApiKey,
-    [Parameter(Mandatory = $true)]
-    [SecureString]$AnthropicApiKey,
     [string]$ProcessingPrepareSchedule = "0 30 1 * * *",
     [string]$ProcessingSynthesisSchedule = "0 30 2 * * *"
 )
@@ -42,7 +40,6 @@ $suffix = (Get-Random -Minimum 10000 -Maximum 99999).ToString()
 $functionApp = "$Project-processing-func-$suffix"
 $appInsights = "$Project-processing-ai-$suffix"
 $openAiPlainText = Convert-SecretToPlainText $OpenAIApiKey
-$anthropicPlainText = Convert-SecretToPlainText $AnthropicApiKey
 
 az config set extension.use_dynamic_install=yes_without_prompt
 az group show --name $ResourceGroup 1>$null
@@ -53,11 +50,6 @@ az keyvault secret set `
     --vault-name $KeyVault `
     --name "openai-api-key" `
     --value $openAiPlainText 1>$null
-
-az keyvault secret set `
-    --vault-name $KeyVault `
-    --name "anthropic-api-key" `
-    --value $anthropicPlainText 1>$null
 
 az monitor app-insights component create `
     --app $appInsights `
@@ -98,19 +90,15 @@ az role assignment create `
 $storageSecretUri = "https://$KeyVault.vault.azure.net/secrets/azure-storage-connection-string"
 $postgresSecretUri = "https://$KeyVault.vault.azure.net/secrets/azure-postgres-dsn"
 $openAiSecretUri = "https://$KeyVault.vault.azure.net/secrets/openai-api-key"
-$anthropicSecretUri = "https://$KeyVault.vault.azure.net/secrets/anthropic-api-key"
 
 $appSettings = @(
     "AzureWebJobsStorage=@Microsoft.KeyVault(SecretUri=$storageSecretUri)",
     "AZURE_POSTGRES_DSN=@Microsoft.KeyVault(SecretUri=$postgresSecretUri)",
     "OPENAI_API_KEY=@Microsoft.KeyVault(SecretUri=$openAiSecretUri)",
-    "ANTHROPIC_API_KEY=@Microsoft.KeyVault(SecretUri=$anthropicSecretUri)",
     "APPLICATIONINSIGHTS_CONNECTION_STRING=$appInsightsConnectionString",
     "SCM_DO_BUILD_DURING_DEPLOYMENT=true",
     "ENABLE_ORYX_BUILD=true",
     "OPENAI_ENRICHMENT_MODEL=gpt-5.4-mini",
-    "ANTHROPIC_SUMMARY_MODEL=claude-opus-4-8",
-    "ANTHROPIC_CONNECTION_MODEL=claude-opus-4-8",
     "OPENAI_EMBEDDING_MODEL=text-embedding-3-small",
     "PROCESSING_PREPARE_SCHEDULE=$ProcessingPrepareSchedule",
     "PROCESSING_SYNTHESIS_SCHEDULE=$ProcessingSynthesisSchedule",

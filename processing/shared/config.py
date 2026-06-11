@@ -22,8 +22,6 @@ class ProcessingConfig:
     embedding_batch_size: int = 100
     initial_context_per_source: int = 10
     openai_enrichment_model: str = "gpt-4.1-mini"
-    anthropic_summary_model: str = "claude-opus-4-8"
-    anthropic_connection_model: str = "claude-opus-4-8"
     openai_embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
 
@@ -49,8 +47,6 @@ class ProcessingConfig:
             embedding_batch_size=int(os.getenv("PROCESSING_EMBEDDING_BATCH_SIZE", "100")),
             initial_context_per_source=int(os.getenv("PROCESSING_INITIAL_CONTEXT_PER_SOURCE", "10")),
             openai_enrichment_model=os.getenv("OPENAI_ENRICHMENT_MODEL", "gpt-4.1-mini"),
-            anthropic_summary_model=os.getenv("ANTHROPIC_SUMMARY_MODEL", "claude-opus-4-8"),
-            anthropic_connection_model=os.getenv("ANTHROPIC_CONNECTION_MODEL", "claude-opus-4-8"),
             openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
             embedding_dimensions=int(os.getenv("OPENAI_EMBEDDING_DIMENSIONS", "1536")),
         )

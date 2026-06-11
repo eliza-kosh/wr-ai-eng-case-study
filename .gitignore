@@ -12,6 +12,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+uv.lock
 
 # Azure Functions
 dataload/local.settings.json
@@ -19,15 +20,18 @@ dataload/.python_packages/
 processing/local.settings.json
 processing/.python_packages/
 
-# Local notebook and exploration artifacts
-notebooks/**/.ipynb_checkpoints/
-notebooks/**/outputs/
+# Local artifacts
+notebooks/
+data/
+AI Engineer Case Study.pdf
 *.log
 
 # Build outputs
 dist/
 build/
 *.egg-info/
+node_modules/
+.next/
 
 # OS/editor
 .DS_Store

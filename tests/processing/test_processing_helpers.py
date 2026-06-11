@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "processing"))
 from shared.citations import extract_cited_item_ids, find_invalid_citations
 from shared.config import ProcessingConfig
 from shared.models import sentiment_to_score
-from shared.openai_client import parse_connection, parse_enrichment
+from shared.openai_client import parse_enrichment
 from shared.sentiment import rolling_z_score
 
 
@@ -31,22 +31,6 @@ def test_parse_enrichment_clamps_and_normalizes() -> None:
     assert result.themes == ("support", "pricing", "enterprise", "extra")
     assert result.firsthand is True
     assert result.summary == "Support response times worsened for enterprise users."
-
-
-def test_parse_connection_defaults_unknown_type() -> None:
-    result = parse_connection(
-        {
-            "valid": True,
-            "confidence": 2,
-            "narrative": "Two sources point to support disruption.",
-            "stock_relevance": "Could pressure enterprise retention.",
-            "connection_type": "unknown",
-        }
-    )
-
-    assert result.valid is True
-    assert result.confidence == 1.0
-    assert result.connection_type == "corroborating"
 
 
 def test_sentiment_to_score() -> None:
@@ -79,6 +63,4 @@ def test_config_defaults_match_plan() -> None:
     assert config.temporal_window_days == 180
     assert config.max_agent_searches == 5
     assert config.max_connection_candidates_per_ticker == 5
-    assert config.anthropic_connection_model == "claude-opus-4-8"
-    assert config.anthropic_summary_model == "claude-opus-4-8"
     assert config.openai_embedding_model == "text-embedding-3-small"

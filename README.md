@@ -1,15 +1,13 @@
 # Whale Rock AI Workbench
 
-Azure-first monorepo for collecting alternative data, preparing it for retrieval, and serving analyst-facing workflows.
+Azure-first repo for collecting alternative data and processing it into analyst-ready Postgres tables.
 
 ## Structure
 
 - `dataload`: one Azure Functions app with timer-triggered loaders for Reddit, Hacker News, and GitHub.
-- `notebooks/data_exploration`: source exploration notebooks and local-only notebook outputs.
-- `processing`: Azure Functions app for enrichment, pgvector embeddings, cross-source connections, brain summaries, and weekly sentiment aggregation.
-- `services`: future API containers for connections and agentic RAG workflows.
-- `apps/dashboard`: future analyst dashboard.
+- `processing`: Azure Functions app for enrichment, pgvector embeddings, semantic connections, ticker summaries, and weekly sentiment aggregation.
 - `infra/azure`: PowerShell scripts for provisioning and deploying Azure resources.
+- `tests/processing`: unit tests for processing helpers and orchestration.
 
 ## Dataload Flow
 
@@ -51,22 +49,20 @@ Local-only values can be copied from `.env.example` into `.env`. Do not commit r
 
 ## Processing Flow
 
-The processing Function App runs after dataload and reads normalized rows from `source_items`. It has two timer-triggered jobs: `prepare_processing` enriches Reddit, Hacker News, and GitHub items with OpenAI structured outputs and stores relevant summary embeddings in Postgres/pgvector; `synthesis_processing` verifies cross-source connections, generates ticker-level brain summaries with citation checks, and refreshes weekly sentiment aggregates for the dashboard.
+The processing Function App runs after dataload and reads normalized rows from `source_items`. It has two timer-triggered jobs: `prepare_processing` enriches Reddit, Hacker News, and GitHub items with OpenAI structured outputs and stores embeddings in Postgres/pgvector; `synthesis_processing` writes deterministic ticker summaries, semantic review connections, and weekly sentiment aggregates.
 
-Default cadence is daily at `PROCESSING_PREPARE_SCHEDULE=0 30 1 * * *` and `PROCESSING_SYNTHESIS_SCHEDULE=0 30 2 * * *`. Required runtime secrets are `AZURE_POSTGRES_DSN`, `OPENAI_API_KEY`, and `ANTHROPIC_API_KEY`; model names and thresholds are config-driven in `.env.example`. Connection verification and brain summaries default to Claude Opus once daily in `synthesis_processing`.
+Default cadence is daily at `PROCESSING_PREPARE_SCHEDULE=0 30 1 * * *` and `PROCESSING_SYNTHESIS_SCHEDULE=0 30 2 * * *`. Required runtime secrets are `AZURE_POSTGRES_DSN` and `OPENAI_API_KEY`; model names and thresholds are config-driven in `.env.example`.
 
 Deploy the processing Function App after setup:
 
 ```powershell
 $openai = Read-Host "OpenAI API key" -AsSecureString
-$anthropic = Read-Host "Anthropic API key" -AsSecureString
 .\infra\azure\setup-processing.ps1 `
   -Project "eliza-ai-workbench" `
   -ResourceGroup "eliza-ai-workbench-rg" `
   -StorageAccount "<storage-account-from-dataload-setup>" `
   -KeyVault "<key-vault-from-dataload-setup>" `
-  -OpenAIApiKey $openai `
-  -AnthropicApiKey $anthropic
+  -OpenAIApiKey $openai
 
 .\infra\azure\deploy-processing.ps1 `
   -ResourceGroup "eliza-ai-workbench-rg" `
@@ -75,10 +71,11 @@ $anthropic = Read-Host "Anthropic API key" -AsSecureString
 
 ## GitHub Deployment
 
-`.github/workflows/deploy-dataload.yml` deploys the `dataload` Azure Function App from `main`, and `.github/workflows/deploy-processing.yml` deploys `processing`. Add these GitHub repository secrets:
+`.github/workflows/deploy-dataload.yml` deploys the `dataload` Azure Function App from `main` using a Function publish profile. `.github/workflows/deploy-processing.yml` deploys `processing` using Azure OIDC/RBAC.
+
+For dataload, add this GitHub repository secret:
 
 - `AZURE_FUNCTIONAPP_PUBLISH_PROFILE`
-- `AZURE_PROCESSING_FUNCTIONAPP_PUBLISH_PROFILE`
 
 You can download the publish profile from the Azure Portal Function App overview page, or with Azure CLI:
 
@@ -92,7 +89,11 @@ az functionapp deployment list-publishing-profiles `
 
 Copy the full XML output into the GitHub secret value.
 
-The OIDC helper script is kept for future RBAC-based deployment work:
+For processing OIDC deployment, add these GitHub repository secrets and grant the service principal `Website Contributor` on the processing Function App:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
 
 ```powershell
 $env:Path = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;$env:Path"
