@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, ExternalLink, GitBranch, RefreshCw, Search } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import type { ConnectionItem, DashboardData, SentimentPoint, SourceItem } from "@/lib/db";
 
 const colors: Record<string, string> = {
@@ -78,8 +78,6 @@ export default function Dashboard({ data }: { data: DashboardData }) {
               <SourceFeed items={filtered} />
             </section>
 
-            <SummaryDetails data={data} />
-
             <section className="card">
               <div className="sectionTitleRow">
                 <div className="sectionHeading">
@@ -98,23 +96,6 @@ export default function Dashboard({ data }: { data: DashboardData }) {
               {view === "connections" ? <Connections items={data.connections} /> : <Sentiment rows={chartRows} sources={sentimentSources} />}
             </section>
           </section>
-
-          <aside className="pipelineRail" aria-label="Live pipeline">
-            <section className="railCard">
-              <div className="sectionHeading">
-                <p>Live pipeline</p>
-                <h2>What is happening</h2>
-              </div>
-              <Pipeline icon={<RefreshCw size={16} />} title="Dataload" body={`${data.pipeline.successfulDataloadRuns}/${data.pipeline.dataloadRuns} successful runs`} count={`${data.pipeline.sourceItems.toLocaleString()} source rows`} />
-              <Pipeline icon={<Search size={16} />} title="Prepare processing" body="Relevance, sentiment, firsthand tags, summaries, and embeddings" count={`${data.pipeline.enrichments.toLocaleString()} enriched / ${data.pipeline.embeddings.toLocaleString()} embedded`} />
-              <Pipeline icon={<GitBranch size={16} />} title="Connection verification" body="Cross-source candidates checked for stock relevance" count={`${data.pipeline.connections.toLocaleString()} valid links`} />
-              <Pipeline icon={<Activity size={16} />} title="Synthesis" body="Brain summaries and weekly sentiment refreshed for the dashboard" count={`${data.pipeline.summaries.toLocaleString()} summaries / ${data.pipeline.sentimentRows.toLocaleString()} sentiment rows`} />
-            </section>
-            <section className="railCard amberCard">
-              <strong>Current read</strong>
-              <p>{data.summary ? `${data.ticker} has ${data.sources.length} source rows and ${data.connections.length} verified connections.` : "Run synthesis processing to populate the overview."}</p>
-            </section>
-          </aside>
         </div>
       </main>
     </div>
@@ -133,10 +114,7 @@ function Overview({ data }: { data: DashboardData }) {
         </div>
         <div className="metricGrid compactMetrics">
           <Metric label="Ticker" value={data.ticker} />
-          <Metric label="Confidence" value={data.summary?.confidence || "pending"} />
-          <Metric label="Cited sources" value={`${data.summary?.citedItemIds.length || 0}`} />
-          <Metric label="Latest refresh" value={formatDate(data.pipeline.latestRunAt)} />
-        </div>
+          <Metric label="Confidence" value={data.summary?.confidence || "pending"} />`n        </div>
       </div>
       {data.summary ? (
         <div className="overviewReadout">
@@ -158,35 +136,6 @@ function Metric({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
-  );
-}
-
-function SummaryDetails({ data }: { data: DashboardData }) {
-  if (!data.summary) return null;
-  const signals = normalize(data.summary.keySignals).map(cleanSignal).filter(Boolean);
-  const links = normalize(data.summary.crossSourceConnections).map(cleanSignal).filter(Boolean);
-
-  return (
-    <section className="card detailCard">
-      <div className="sectionHeading">
-        <p>Evidence read</p>
-        <h2>Signals behind the overview</h2>
-      </div>
-      <div className="detailGrid">
-        <article>
-          <h3>Key signals</h3>
-          {signals.length ? <ul>{signals.map((x, i) => <li key={i}>{x}</li>)}</ul> : <p>No key signals stored.</p>}
-        </article>
-        <article>
-          <h3>Bear case</h3>
-          <p>{data.summary.bearCase}</p>
-        </article>
-        <article>
-          <h3>Cross-source read</h3>
-          {links.length ? <ul>{links.map((x, i) => <li key={i}>{x}</li>)}</ul> : <p>No cross-source notes stored.</p>}
-        </article>
-      </div>
-    </section>
   );
 }
 
@@ -284,19 +233,6 @@ function Sentiment({ rows, sources }: { rows: Record<string, string | number>[];
   );
 }
 
-function Pipeline({ icon, title, body, count }: { icon: React.ReactNode; title: string; body: string; count: string }) {
-  return (
-    <div className="pipelineStep">
-      <div className="pipelineIcon">{icon}</div>
-      <div>
-        <strong>{title}</strong>
-        <p>{body}</p>
-        <span>{count}</span>
-      </div>
-    </div>
-  );
-}
-
 function toChartRows(points: SentimentPoint[]) {
   const byWeek = new Map<string, Record<string, string | number>>();
   points.forEach((p) => {
@@ -345,6 +281,8 @@ function cleanSignal(value: string) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+
 
 
 
