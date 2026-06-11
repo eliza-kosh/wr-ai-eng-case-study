@@ -21,7 +21,8 @@ processing/local.settings.json
 processing/.python_packages/
 
 # Local artifacts
-notebooks/
+notebooks/**/.ipynb_checkpoints/
+notebooks/**/outputs/
 data/
 AI Engineer Case Study.pdf
 *.log
