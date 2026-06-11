@@ -208,7 +208,7 @@ function SourceFeed({ items, citationNumbers }: { items: SourceItem[]; citationN
         return (
           <article id={sourceAnchorId(item.id)} className={item.cited || citationNumber ? "sourceRow cited" : "sourceRow"} key={item.id}>
             <div className="sourceBadge" style={{ color: color(item.source) }}>
-              {citationNumber ? <span className="sourceRefBadge">Excerpt [{citationNumber}]</span> : null}
+              {citationNumber ? <span className="sourceRefBadge" style={{ display: "inline-flex", alignItems: "center", minHeight: 24, marginBottom: 7, padding: "0 9px", borderRadius: 999, background: "var(--primary)", color: "#fff", fontSize: 11, fontWeight: 900 }}>Excerpt [{citationNumber}]</span> : null}
               <span>{label(item.source)}</span>
               <small>{formatDate(item.publishedAt)}</small>
             </div>
