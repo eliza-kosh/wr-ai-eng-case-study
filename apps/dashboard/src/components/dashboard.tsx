@@ -76,7 +76,7 @@ export default function Dashboard({ data }: { data: DashboardData }) {
               <div className="sectionTitleRow">
                 <div className="sectionHeading">
                   <p>Connections</p>
-                  <h2>What is actually happening</h2>
+                  <h2>Connections</h2>
                 </div>
               </div>
               <Connections items={topConnections} sources={visibleSources} citationNumbers={citationNumbers} sourceById={sourceById} />
@@ -224,7 +224,7 @@ function Connections({ items, sources, citationNumbers, sourceById }: { items: C
     <div className="connectionList">
       {items.map((item, index) => {
         const headline = connectionRead(item);
-        const support = connectionSupport(item, headline);
+        const body = connectionBody(item, headline);
         const citationIds = connectionCitationIds(item, sources);
         return (
           <article className="connectionCard" key={item.id}>
@@ -235,7 +235,9 @@ function Connections({ items, sources, citationNumbers, sourceById }: { items: C
                 <span>{label(item.connectionType)}</span>
               </div>
               <h3>{headline}</h3>
-              {support ? <p>{support}</p> : null}
+              {body.map((paragraph, paragraphIndex) => (
+                <p key={paragraphIndex}>{paragraph}</p>
+              ))}
               <small>
                 Evidence: {label(item.sourceA)} and {label(item.sourceB)}
                 <CitationGroup ids={citationIds} citationNumbers={citationNumbers} sourceById={sourceById} />
@@ -258,29 +260,18 @@ function resolveSourceRef(value: string, sources: SourceItem[]) {
   return sources.find((source) => source.source.toLowerCase() === normalized || label(source.source).toLowerCase() === label(value).toLowerCase())?.id || value;
 }
 function connectionRead(item: ConnectionItem) {
-  const narrative = cleanSignal(item.narrative);
-  const title = firstSentence(narrative);
-  return title || cleanSignal(item.stockRelevance);
+  return cleanSignal(item.connectionTitle) || cleanSignal(item.title) || firstSentence(cleanSignal(item.narrative)) || cleanSignal(item.stockRelevance);
 }
 
-function connectionSupport(item: ConnectionItem, headline: string) {
-  const narrative = cleanSignal(item.narrative);
-  const body = narrativeRemainder(narrative);
-  if (body && !sameText(body, headline)) return body;
-  if (narrative && !sameText(narrative, headline) && !normalizeForDedupe(headline).includes(normalizeForDedupe(narrative))) return narrative;
-  const relevance = cleanSignal(item.stockRelevance);
-  if (relevance && !sameText(relevance, headline) && !sameText(relevance, narrative)) return relevance;
-  return "";
+function connectionBody(item: ConnectionItem, headline: string) {
+  return unique([cleanSignal(item.title), cleanSignal(item.narrative)])
+    .filter(Boolean)
+    .filter((paragraph) => !sameText(paragraph, headline));
 }
 
 function firstSentence(value: string) {
   const match = value.match(/^(.+?[.!?])(\s|$)/);
   return match ? match[1].trim() : value.trim();
-}
-
-function narrativeRemainder(value: string) {
-  const title = firstSentence(value);
-  return value.slice(title.length).trim();
 }
 
 function label(source: string) {
