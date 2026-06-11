@@ -17,6 +17,7 @@ class ProcessingConfig:
     connection_confidence_threshold: float = 0.10
     temporal_window_days: int = 90
     max_connection_candidates_per_ticker: int = 12
+    max_valid_connections_per_ticker: int = 4
     connection_cluster_size: int = 30
     connection_cluster_max_overlap: float = 0.65
     max_agent_searches: int = 5
@@ -45,6 +46,7 @@ class ProcessingConfig:
             max_connection_candidates_per_ticker=int(
                 os.getenv("PROCESSING_MAX_CONNECTION_CANDIDATES_PER_TICKER", "12")
             ),
+            max_valid_connections_per_ticker=int(os.getenv("PROCESSING_MAX_VALID_CONNECTIONS_PER_TICKER", "4")),
             connection_cluster_size=int(os.getenv("PROCESSING_CONNECTION_CLUSTER_SIZE", "30")),
             connection_cluster_max_overlap=float(os.getenv("PROCESSING_CONNECTION_CLUSTER_MAX_OVERLAP", "0.65")),
             max_agent_searches=int(os.getenv("PROCESSING_MAX_AGENT_SEARCHES", "5")),

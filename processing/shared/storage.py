@@ -560,6 +560,22 @@ class ProcessingStore:
                     break
         return clusters
 
+    def count_valid_connection_clusters(self, ticker: str) -> int:
+        """Count valid clusters that are currently visible under the configured threshold."""
+        with self._connect() as conn:
+            return int(
+                conn.execute(
+                    """
+                    select count(*)::int
+                    from connection_clusters
+                    where ticker = %s
+                      and valid = true
+                      and confidence >= %s
+                    """,
+                    (ticker, self.config.connection_confidence_threshold),
+                ).fetchone()[0]
+            )
+
     def upsert_connection_cluster(
         self,
         candidate: ConnectionClusterCandidate,

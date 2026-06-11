@@ -107,8 +107,13 @@ class ProcessingRunner:
         candidate_count = 0
         valid_count = 0
         for ticker in self.store.fetch_tickers_with_embeddings():
+            existing_valid = self.store.count_valid_connection_clusters(ticker)
+            remaining_valid_slots = max(0, self.config.max_valid_connections_per_ticker - existing_valid)
+            if remaining_valid_slots <= 0:
+                continue
             candidates = self.store.fetch_connection_cluster_candidates(ticker)
             candidate_count += len(candidates)
+            accepted_for_ticker = 0
             for candidate in candidates:
                 try:
                     verification = self.llm.verify_connection_cluster(candidate)
@@ -131,6 +136,9 @@ class ProcessingRunner:
                     and verification.confidence >= self.config.connection_confidence_threshold
                 ):
                     valid_count += 1
+                    accepted_for_ticker += 1
+                    if accepted_for_ticker >= remaining_valid_slots:
+                        break
         return {"connection_candidates": candidate_count, "connections_valid": valid_count}
 
     def _guardrail_cluster_verification(
